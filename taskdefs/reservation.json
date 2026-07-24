@@ -1,0 +1,33 @@
+{
+  "family": "jy-project-reservation",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::263232886346:role/ecs-demo-execution-role",
+  "taskRoleArn": "arn:aws:iam::263232886346:role/ecs-demo-task-role",
+  "containerDefinitions": [
+    {
+      "name": "reservation",
+      "image": "263232886346.dkr.ecr.ap-northeast-2.amazonaws.com/jy-project/reservation:PLACEHOLDER",
+      "portMappings": [
+        { "containerPort": 8000, "protocol": "tcp", "appProtocol": "http", "name": "reservation-8000" }
+      ],
+      "environment": [
+        { "name": "ECS_FARGATE", "value": "true" },
+        { "name": "INVENTORY_URL", "value": "http://inventory:8000" },
+        { "name": "PAYMENT_URL", "value": "http://payment:8000" },
+        { "name": "NOTIFICATION_URL", "value": "http://notification:8000" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/jy-project-reservation",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "reservation",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

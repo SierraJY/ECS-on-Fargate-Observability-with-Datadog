@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: inventory
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  inventory:
+    build: ./inventory
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: inventory
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_SSLMODE: disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  payment:
+    build: ./payment
+
+  notification:
+    build: ./notification
+
+  reservation:
+    build: ./reservation
+    environment:
+      INVENTORY_URL: http://inventory:8000
+      PAYMENT_URL: http://payment:8000
+      NOTIFICATION_URL: http://notification:8000
+    depends_on:
+      - inventory
+      - payment
+      - notification
+
+  gateway:
+    build: ./gateway
+    environment:
+      RESERVATION_URL: http://reservation:8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - reservation

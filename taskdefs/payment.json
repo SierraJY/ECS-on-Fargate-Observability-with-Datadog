@@ -1,0 +1,30 @@
+{
+  "family": "jy-project-payment",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::263232886346:role/ecs-demo-execution-role",
+  "taskRoleArn": "arn:aws:iam::263232886346:role/ecs-demo-task-role",
+  "containerDefinitions": [
+    {
+      "name": "payment",
+      "image": "263232886346.dkr.ecr.ap-northeast-2.amazonaws.com/jy-project/payment:PLACEHOLDER",
+      "portMappings": [
+        { "containerPort": 8000, "protocol": "tcp", "appProtocol": "http", "name": "payment-8000" }
+      ],
+      "environment": [
+        { "name": "ECS_FARGATE", "value": "true" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/jy-project-payment",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "payment",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

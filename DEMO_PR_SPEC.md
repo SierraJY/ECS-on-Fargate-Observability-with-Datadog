@@ -19,7 +19,7 @@
 - **Reservation**
     - 역할: Inventory(좌석 잠금)와 Payment(결제)를 병렬 호출. 둘 다 성공 시 Inventory 확정 처리 + Notification 호출. 하나라도 실패 시 Inventory 잠금 해제(보상 트랜잭션)
     - 엔드포인트: `POST /reservations`, `GET /health`
-    - 호출 대상: Inventory, Payment, Notification (Service Connect discoveryName으로 접근)
+    - 호출 대상: Inventory, Payment, Notification (Service Connect FQDN, `<discoveryName>.jy-project`으로 접근 — 3.4.1 참고)
 - **Inventory**
     - 역할: 좌석 재고 상태 관리, 동시 예약 충돌 방지, 유일하게 RDS 사용
     - DB: RDS PostgreSQL, `seats` 테이블 — `seat_id`, `status`(AVAILABLE/LOCKED/BOOKED), `locked_by`, `locked_at`
@@ -187,11 +187,40 @@
     - Cloud Map 네임스페이스
     - Namespace name: `jy-project`
     - Namespace type: API 호출
-    - 서비스별 discoveryName: `gateway`, `reservation`, `inventory`, `payment`, `notification`
+    - 서비스별 discoveryName: `reservation`, `inventory`, `payment`, `notification` (Gateway는 서버 역할 없어 discoveryName 없음 — 3.4.1 참고)
 - [Fargate Cluster]
     - `jy-project-cluster`
         - Infrastructure: AWS Fargate (serverless)
         - **Namespace :**`jy-project`
+
+#### 3.4.1 ECS 서비스 생성 시 주의사항 (Phase 1 배포 기준)
+
+- [서비스 이름]
+    - 콘솔 기본 제안값(`jy-project-<service>-service-<랜덤문자열>`) 그대로 두지 않음 — CI 워크플로우가 찾는 이름과 불일치해 `Deploy to ECS` 실패
+    - ECS 서비스는 생성 후 이름 변경 불가, 삭제 후 재생성 필요
+    - 확정 규칙: `jy-project-<service>-service` (랜덤 접미사 없이 직접 입력)
+- [네트워크]
+    - 서브넷: private(2a, 2c) 2개만 선택
+    - 퍼블릭 IP 자동 할당: 비활성화 (private 서브넷은 IGW 라우트 없어 실효 없음, NAT Gateway 아웃바운드 구조와 불일치)
+- [Service Connect 모드]
+    - 기준: 다른 서비스가 Service Connect로 호출해야 하는가
+
+    | 서비스 | 모드 | 이유 |
+    |---|---|---|
+    | Gateway | 클라이언트 모드 | Reservation만 호출, ALB가 태스크 IP 직접 타겟팅이라 Gateway를 부르는 서비스 없음 |
+    | Reservation | 클라이언트-서버 모드 | Gateway가 호출(서버) + Inventory/Payment/Notification 호출(클라이언트) |
+    | Inventory / Payment / Notification | 클라이언트-서버 모드 | Reservation이 호출 |
+
+    - 클라이언트 모드도 Service Connect 자체(네임스페이스 `jy-project`)는 켜져 있어야 함 — 짧은 이름은 Envoy 사이드카 기반 특수 주소라 호출하는 쪽도 꺼져 있으면 통신 불가
+    - 클라이언트-서버 모드: 포트 매핑(`inventory-8000` 등) 추가 + Discovery name을 서비스명 그대로(`inventory` 등) 직접 지정
+- [Service Connect DNS]
+    - discovery name이 `inventory`여도 실제 resolve 가능한 주소는 `inventory.jy-project`(네임스페이스 접미사 포함)
+    - taskdef 환경변수(`INVENTORY_URL` 등)는 FQDN으로 설정 — 짧은 이름은 `Name or service not known`
+    - 로컬 `docker-compose.local.yml`은 도커 임베디드 DNS라 영향 없음
+- [Execution Role 권한]
+    - `AmazonECSTaskExecutionRolePolicy`는 `logs:CreateLogGroup` 미포함
+    - `awslogs-create-group: true` 사용 시 이 권한 없으면 `ResourceInitializationError`로 태스크 기동 자체 실패
+    - `ecs-demo-execution-role`에 `logs:CreateLogGroup`(리소스: `arn:aws:logs:ap-northeast-2:263232886346:log-group:/ecs/jy-project-*`) 인라인 정책 추가로 해결
 
 #### 3.5 ECR
 
@@ -225,6 +254,22 @@
             }
             ```
             
+    - `logs:CreateLogGroup` 인라인 정책 추가 (정책명: `allow-cloudwatch-log-group-creation`)
+        - `AmazonECSTaskExecutionRolePolicy`가 `CreateLogStream`/`PutLogEvents`만 포함하고 `CreateLogGroup`은 빠져 있어서, taskdef의 `awslogs-create-group: true`가 동작하려면 별도 추가 필요 (3.4.1 참고)
+            
+            ```jsx
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "logs:CreateLogGroup",
+                  "Resource": "arn:aws:logs:ap-northeast-2:263232886346:log-group:/ecs/jy-project-*"
+                }
+              ]
+            }
+            ```
+            
 - Role name: ecs-demo-task-role
     - Trusted entity type: `AWS service`
     - Use case: `Elastic Container Service` → **`Elastic Container Service Task`**
@@ -247,7 +292,7 @@
 
 #### 4.2 파이프라인 범위
 
-- 최초 인프라(클러스터·서비스·Task Definition·VPC·RDS)는 콘솔에서 수동 생성. 이후 코드 변경 시 이미지 빌드부터 서비스 배포까지는 CI가 자동화
+- 최초 인프라(클러스터·서비스·VPC·RDS)는 콘솔에서 수동 생성. Task Definition은 최초 push부터 CI가 자동 등록(수동 생성 아님). 이후 코드 변경 시 이미지 빌드부터 서비스 배포까지는 CI가 자동화
 
 #### 4.3 워크플로우 단계
 
@@ -255,7 +300,7 @@
 2. AWS 인증 (OIDC로 IAM Role 위임, Access Key 미사용)
 3. ECR 로그인
 4. 서비스별 Docker 이미지 빌드 (matrix 전략, 워크플로우 파일 1개로 5개 서비스 처리)
-5. ECR 푸시 — `latest` 태그와 커밋 SHA 태그 함께 푸시
+5. ECR 푸시 — 커밋 SHA 태그만 사용 (`latest` 태그 미사용)
 6. Task Definition JSON 템플릿(레포에 커밋된 5개 파일)의 이미지 URI를 새 이미지로 교체 (`amazon-ecs-render-task-definition` 액션)
 7. `register-task-definition`으로 새 리비전 등록, `update-service`로 서비스 갱신 (`amazon-ecs-deploy-task-definition` 액션)
 

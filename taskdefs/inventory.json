@@ -1,0 +1,44 @@
+{
+  "family": "jy-project-inventory",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::263232886346:role/ecs-demo-execution-role",
+  "taskRoleArn": "arn:aws:iam::263232886346:role/ecs-demo-task-role",
+  "containerDefinitions": [
+    {
+      "name": "inventory",
+      "image": "263232886346.dkr.ecr.ap-northeast-2.amazonaws.com/jy-project/inventory:PLACEHOLDER",
+      "portMappings": [
+        { "containerPort": 8000, "protocol": "tcp", "appProtocol": "http", "name": "inventory-8000" }
+      ],
+      "environment": [
+        { "name": "ECS_FARGATE", "value": "true" },
+        { "name": "DB_HOST", "value": "jy-project-db.cxsmy4yg60ts.ap-northeast-2.rds.amazonaws.com" },
+        { "name": "DB_PORT", "value": "5432" },
+        { "name": "DB_NAME", "value": "inventory" },
+        { "name": "DB_SSLMODE", "value": "verify-full" }
+      ],
+      "secrets": [
+        {
+          "name": "DB_USERNAME",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:263232886346:secret:rds!db-18dce600-05b3-4a42-9284-3eeb5b617745-NHTBAD:username::"
+        },
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:263232886346:secret:rds!db-18dce600-05b3-4a42-9284-3eeb5b617745-NHTBAD:password::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/jy-project-inventory",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "inventory",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

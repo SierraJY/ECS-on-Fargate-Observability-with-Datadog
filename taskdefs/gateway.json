@@ -15,7 +15,7 @@
       ],
       "environment": [
         { "name": "ECS_FARGATE", "value": "true" },
-        { "name": "RESERVATION_URL", "value": "http://reservation:8000" }
+        { "name": "RESERVATION_URL", "value": "http://reservation.jy-project:8000" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

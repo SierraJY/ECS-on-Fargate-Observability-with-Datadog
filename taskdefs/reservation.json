@@ -15,9 +15,9 @@
       ],
       "environment": [
         { "name": "ECS_FARGATE", "value": "true" },
-        { "name": "INVENTORY_URL", "value": "http://inventory:8000" },
-        { "name": "PAYMENT_URL", "value": "http://payment:8000" },
-        { "name": "NOTIFICATION_URL", "value": "http://notification:8000" }
+        { "name": "INVENTORY_URL", "value": "http://inventory.jy-project:8000" },
+        { "name": "PAYMENT_URL", "value": "http://payment.jy-project:8000" },
+        { "name": "NOTIFICATION_URL", "value": "http://notification.jy-project:8000" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

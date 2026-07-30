@@ -238,7 +238,7 @@
     - Use case: `Elastic Container Service` → **`Elastic Container Service Task`**
     - Permissions policies: `AmazonECSTaskExecutionRolePolicy`
         - ECR pull + CloudWatch Logs 쓰기 권한 포함된 AWS 관리형 정책
-    - 생성 후 Secrets Manager 읽기 권한을 추가
+    - 생성 후 Secrets Manager 읽기 권한을 추가 (인라인 정책명: `secrets-read`)
         - RDS 자격증명을 `DATABASE_URL`로 주입하려면 필요
             
             ```jsx
@@ -270,11 +270,46 @@
             }
             ```
             
+    - SSM Parameter Store 읽기 + KMS 복호화 권한 추가 (인라인 정책명: `param_read`, Phase 2)
+        - Datadog Agent/FireLens 컨테이너가 `/jy-project/*` 아래 SSM 파라미터(Datadog API Key 등, 3.7 참고)를 Fargate 기동 시점에 직접 조회하려면 필요. `kms:Decrypt`가 없으면 `datadog-api-key`(SecureString) 조회 시 `ResourceInitializationError`로 태스크 기동 실패
+            
+            ```jsx
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "ssm:GetParameters",
+                  "Resource": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "kms:Decrypt",
+                  "Resource": "arn:aws:kms:ap-northeast-2:263232886346:key/cc5ac505-a5e1-49ba-b1c3-1093adc44a74"
+                }
+              ]
+            }
+            ```
+            
 - Role name: ecs-demo-task-role
     - Trusted entity type: `AWS service`
     - Use case: `Elastic Container Service` → **`Elastic Container Service Task`**
     - Permissions policies:
-    - 나중에 Datadog Agent 붙일 때 필요한 권한을 여기에 추가
+    - 나중에 Datadog Agent 붙일 때 필요한 권한을 여기에 추가 — Agent가 ECS/CloudWatch API를 폴링하며 `AccessDenied`를 내는 경우에만 최소 권한으로 추가 예정(현재 미정)
+
+### 3.7 SSM Parameter Store
+
+- Phase 2(Datadog 사이드카) 작업을 위해 taskdef 5개 파일에 흩어져 있던 ARN과 Datadog 설정값을 `/jy-project/*` 네임스페이스로 중앙 관리
+- `.env` 파일 방식은 검토 후 채택하지 않음 — CI 러너가 gitignore된 로컬 파일을 읽을 수 없어 결국 GitHub Actions Variables 같은 별도 CI 전용 저장소가 필요해지고, 로컬/CI 두 저장소를 사람이 수동 동기화해야 하는 drift 위험이 있어 SSM 단일 소스로 통일
+- 소비 방식 두 갈래: taskdef 최상위 필드·FireLens 옵션처럼 등록 시점에 값이 확정돼야 하는 항목은 CI가 조회 후 치환, 컨테이너 `secrets.valueFrom`으로 넣을 수 있는 항목은 ECS가 Fargate 기동 시점에 직접 조회(3.6의 `param_read`, 4.4의 OIDC 역할 권한이 각각 이 두 갈래에 대응)
+
+| Path | Type | 값 | 용도 |
+|---|---|---|---|
+| `/jy-project/ecs-execution-role-arn` | String | `arn:aws:iam::263232886346:role/ecs-demo-execution-role` | taskdef 최상위 `executionRoleArn`, CI가 등록 전 치환 |
+| `/jy-project/ecs-task-role-arn` | String | `arn:aws:iam::263232886346:role/ecs-demo-task-role` | taskdef 최상위 `taskRoleArn`, CI가 등록 전 치환 |
+| `/jy-project/rds-secret-arn` | String | `arn:aws:secretsmanager:ap-northeast-2:263232886346:secret:rds!db-18dce600-05b3-4a42-9284-3eeb5b617745-NHTBAD` | inventory taskdef의 RDS `secrets.valueFrom` 접두사, CI가 등록 전 치환. 값 자체는 3.3의 RDS 관리형 Secrets Manager 시크릿 ARN을 그대로 가리키는 포인터 |
+| `/jy-project/dd-site` | String | `datadoghq.com` | Datadog Agent 컨테이너는 `secrets.valueFrom`으로 런타임에 직접 조회, FireLens `Host` 옵션 문자열은 CI가 치환 |
+| `/jy-project/datadog-api-key` | SecureString(KMS `alias/aws/ssm`, key ARN `arn:aws:kms:ap-northeast-2:263232886346:key/cc5ac505-a5e1-49ba-b1c3-1093adc44a74`) | Datadog API Key 원문 | Datadog Agent/FireLens 컨테이너가 `secrets`/`secretOptions`의 `valueFrom`으로 런타임에 직접 조회. CI(4.4의 OIDC 역할)는 `kms:Decrypt` 권한이 없어 이 값을 복호화할 수 없음 — 원문 API Key가 CI 파이프라인을 거치지 않는 구조 |
 
 ---
 
@@ -362,11 +397,20 @@
         					"iam:PassedToService": "ecs-tasks.amazonaws.com"
         				}
         			}
+        		},
+        		{
+        			"Effect": "Allow",
+        			"Action": [
+        				"ssm:GetParameters",
+        				"ssm:GetParametersByPath"
+        			],
+        			"Resource": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/*"
         		}
         	]
         }
         ```
         
+    - Phase 2에서 taskdef 등록 전 SSM 값 치환(3.7 참고)을 위해 `ssm:GetParameters`/`ssm:GetParametersByPath` 추가. **의도적으로 `kms:Decrypt`는 부여하지 않음** — `datadog-api-key`(SecureString)를 이 역할이 복호화하지 못하게 막아, 원문 API Key가 CI 파이프라인 경로를 절대 거치지 않도록 하는 방어선
 
 ---
 

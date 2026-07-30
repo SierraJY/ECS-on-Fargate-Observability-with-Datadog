@@ -18,7 +18,12 @@
       ],
       "environment": [
         { "name": "ECS_FARGATE", "value": "true" },
-        { "name": "RESERVATION_URL", "value": "http://reservation.jy-project:8000" }
+        { "name": "RESERVATION_URL", "value": "http://reservation.jy-project:8000" },
+        { "name": "DD_SERVICE", "value": "gateway" },
+        { "name": "DD_ENV", "value": "dev" },
+        { "name": "DD_VERSION", "value": "0.0.1" },
+        { "name": "DD_AGENT_HOST", "value": "localhost" },
+        { "name": "DD_TRACE_AGENT_PORT", "value": "8126" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
@@ -38,7 +43,7 @@
       "essential": false,
       "environment": [
         { "name": "ECS_FARGATE", "value": "true" },
-        { "name": "DD_APM_ENABLED", "value": "false" }
+        { "name": "DD_APM_ENABLED", "value": "true" }
       ],
       "secrets": [
         { "name": "DD_API_KEY", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/datadog-api-key" },

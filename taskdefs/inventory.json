@@ -20,7 +20,12 @@
         { "name": "ECS_FARGATE", "value": "true" },
         { "name": "DB_PORT", "value": "5432" },
         { "name": "DB_NAME", "value": "inventory" },
-        { "name": "DB_SSLMODE", "value": "verify-full" }
+        { "name": "DB_SSLMODE", "value": "verify-full" },
+        { "name": "DD_SERVICE", "value": "inventory" },
+        { "name": "DD_ENV", "value": "dev" },
+        { "name": "DD_VERSION", "value": "0.0.1" },
+        { "name": "DD_AGENT_HOST", "value": "localhost" },
+        { "name": "DD_TRACE_AGENT_PORT", "value": "8126" }
       ],
       "secrets": [
         {
@@ -54,7 +59,7 @@
       "essential": false,
       "environment": [
         { "name": "ECS_FARGATE", "value": "true" },
-        { "name": "DD_APM_ENABLED", "value": "false" }
+        { "name": "DD_APM_ENABLED", "value": "true" }
       ],
       "secrets": [
         { "name": "DD_API_KEY", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/datadog-api-key" },

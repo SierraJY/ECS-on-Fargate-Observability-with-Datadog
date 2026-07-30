@@ -19,6 +19,10 @@ class ReservationBody(BaseModel):
     user_id: str
 
 
+class CancelBody(BaseModel):
+    user_id: str
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -70,3 +74,19 @@ async def create_reservation(body: ReservationBody):
             status_code=409,
             detail=f"reservation failed: {', '.join(failed_parts)} failed",
         )
+
+
+@app.post("/reservations/{seat_id}/cancel")
+async def cancel_reservation(seat_id: str, body: CancelBody):
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        cancel_resp = await client.post(f"{INVENTORY_URL}/seats/{seat_id}/cancel")
+        if cancel_resp.status_code != 200:
+            raise HTTPException(
+                status_code=409, detail=f"cancel failed: seat {seat_id} is not booked"
+            )
+
+        await client.post(
+            f"{NOTIFICATION_URL}/notify",
+            json={"user_id": body.user_id, "message": f"seat {seat_id} cancelled"},
+        )
+        return {"status": "cancelled", "seat_id": seat_id, "user_id": body.user_id}

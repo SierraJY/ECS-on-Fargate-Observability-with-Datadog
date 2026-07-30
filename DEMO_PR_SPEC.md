@@ -310,6 +310,7 @@
 | `/jy-project/rds-secret-arn` | String | `arn:aws:secretsmanager:ap-northeast-2:263232886346:secret:rds!db-18dce600-05b3-4a42-9284-3eeb5b617745-NHTBAD` | inventory taskdef의 RDS `secrets.valueFrom` 접두사, CI가 등록 전 치환. 값 자체는 3.3의 RDS 관리형 Secrets Manager 시크릿 ARN을 그대로 가리키는 포인터 |
 | `/jy-project/dd-site` | String | `datadoghq.com` | Datadog Agent 컨테이너는 `secrets.valueFrom`으로 런타임에 직접 조회, FireLens `Host` 옵션 문자열은 CI가 치환 |
 | `/jy-project/datadog-api-key` | SecureString(KMS `alias/aws/ssm`, key ARN `arn:aws:kms:ap-northeast-2:263232886346:key/cc5ac505-a5e1-49ba-b1c3-1093adc44a74`) | Datadog API Key 원문 | Datadog Agent/FireLens 컨테이너가 `secrets`/`secretOptions`의 `valueFrom`으로 런타임에 직접 조회. CI(4.4의 OIDC 역할)는 `kms:Decrypt` 권한이 없어 이 값을 복호화할 수 없음 — 원문 API Key가 CI 파이프라인을 거치지 않는 구조 |
+| `/jy-project/inventory-db-host` | String | `jy-project-db.cxsmy4yg60ts.ap-northeast-2.rds.amazonaws.com` | inventory 컨테이너가 `secrets.valueFrom`으로 런타임에 직접 조회(RDS가 private 서브넷·퍼블릭 액세스 차단이라 보안상 필수는 아니지만, RDS 재생성 시 taskdef 직접 수정을 피하려고 중앙화). CI 치환 불필요 — SSM 파라미터 ARN이 계정ID+리전+이름으로 결정되는 값이라 taskdef에 고정 문자열로 기입 |
 
 ---
 

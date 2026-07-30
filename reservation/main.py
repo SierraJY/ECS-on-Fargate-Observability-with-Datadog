@@ -2,6 +2,7 @@ import asyncio
 import os
 
 import httpx
+from ddtrace import tracer
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -23,6 +24,16 @@ class CancelBody(BaseModel):
     user_id: str
 
 
+def _set_span_tags(*, error: bool = False, **tags):
+    span = tracer.current_span()
+    if span is None:
+        return
+    for key, value in tags.items():
+        span.set_tag(key, value)
+    if error:
+        span.error = 1
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -30,6 +41,8 @@ async def health():
 
 @app.post("/reservations")
 async def create_reservation(body: ReservationBody):
+    _set_span_tags(**{"seat_id": body.seat_id, "usr.id": body.user_id})
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         lock_resp, charge_resp = await asyncio.gather(
             client.post(
@@ -50,6 +63,10 @@ async def create_reservation(body: ReservationBody):
             confirm_resp = await client.post(f"{INVENTORY_URL}/seats/{body.seat_id}/confirm")
             if confirm_resp.status_code != 200:
                 await client.post(f"{INVENTORY_URL}/seats/{body.seat_id}/release")
+                _set_span_tags(
+                    error=True,
+                    **{"failure.stage": "confirm", "failure.reason": "confirm_failed"},
+                )
                 raise HTTPException(
                     status_code=502,
                     detail="failed to confirm seat after successful lock and charge",
@@ -62,13 +79,24 @@ async def create_reservation(body: ReservationBody):
             return {"status": "booked", "seat_id": body.seat_id, "user_id": body.user_id}
 
         failed_parts = []
+        stages = []
         if not lock_ok:
             failed_parts.append("inventory")
+            stages.append("lock")
         if not charge_ok:
             failed_parts.append("payment")
+            stages.append("charge")
 
         if lock_ok:
             await client.post(f"{INVENTORY_URL}/seats/{body.seat_id}/release")
+
+        _set_span_tags(
+            error=True,
+            **{
+                "failure.stage": ",".join(stages),
+                "failure.reason": ",".join(f"{part}_failed" for part in failed_parts),
+            },
+        )
 
         raise HTTPException(
             status_code=409,
@@ -78,9 +106,15 @@ async def create_reservation(body: ReservationBody):
 
 @app.post("/reservations/{seat_id}/cancel")
 async def cancel_reservation(seat_id: str, body: CancelBody):
+    _set_span_tags(**{"seat_id": seat_id, "usr.id": body.user_id})
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         cancel_resp = await client.post(f"{INVENTORY_URL}/seats/{seat_id}/cancel")
         if cancel_resp.status_code != 200:
+            _set_span_tags(
+                error=True,
+                **{"failure.stage": "cancel", "failure.reason": "not_booked"},
+            )
             raise HTTPException(
                 status_code=409, detail=f"cancel failed: seat {seat_id} is not booked"
             )

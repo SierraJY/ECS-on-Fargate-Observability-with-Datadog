@@ -4,8 +4,8 @@
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "512",
   "memory": "1024",
-  "executionRoleArn": "arn:aws:iam::263232886346:role/ecs-demo-execution-role",
-  "taskRoleArn": "arn:aws:iam::263232886346:role/ecs-demo-task-role",
+  "executionRoleArn": "${ECS_EXECUTION_ROLE_ARN}",
+  "taskRoleArn": "${ECS_TASK_ROLE_ARN}",
   "containerDefinitions": [
     {
       "name": "payment",

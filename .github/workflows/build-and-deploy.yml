@@ -46,11 +46,27 @@ jobs:
           docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch config from SSM
+        run: |
+          aws ssm get-parameters \
+            --names "/jy-project/ecs-execution-role-arn" "/jy-project/ecs-task-role-arn" "/jy-project/rds-secret-arn" "/jy-project/dd-site" \
+            --query "Parameters" --output json > ssm-params.json
+
+          echo "ECS_EXECUTION_ROLE_ARN=$(jq -r '.[] | select(.Name=="/jy-project/ecs-execution-role-arn").Value' ssm-params.json)" >> "$GITHUB_ENV"
+          echo "ECS_TASK_ROLE_ARN=$(jq -r '.[] | select(.Name=="/jy-project/ecs-task-role-arn").Value' ssm-params.json)" >> "$GITHUB_ENV"
+          echo "RDS_SECRET_ARN=$(jq -r '.[] | select(.Name=="/jy-project/rds-secret-arn").Value' ssm-params.json)" >> "$GITHUB_ENV"
+          echo "DD_SITE=$(jq -r '.[] | select(.Name=="/jy-project/dd-site").Value' ssm-params.json)" >> "$GITHUB_ENV"
+
+      - name: Substitute config values into task definition
+        run: |
+          envsubst '$ECS_EXECUTION_ROLE_ARN,$ECS_TASK_ROLE_ARN,$RDS_SECRET_ARN,$DD_SITE' \
+            < taskdefs/${{ matrix.service }}.json > taskdefs/${{ matrix.service }}.rendered.json
+
       - name: Render new task definition
         id: render-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: taskdefs/${{ matrix.service }}.json
+          task-definition: taskdefs/${{ matrix.service }}.rendered.json
           container-name: ${{ matrix.service }}
           image: ${{ steps.build-image.outputs.image }}
 

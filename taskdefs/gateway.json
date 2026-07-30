@@ -10,6 +10,9 @@
     {
       "name": "gateway",
       "image": "263232886346.dkr.ecr.ap-northeast-2.amazonaws.com/jy-project/gateway:PLACEHOLDER",
+      "cpu": 128,
+      "memory": 256,
+      "essential": true,
       "portMappings": [
         { "containerPort": 8000, "protocol": "tcp", "appProtocol": "http", "name": "gateway-8000" }
       ],
@@ -26,6 +29,21 @@
           "awslogs-create-group": "true"
         }
       }
+    },
+    {
+      "name": "datadog-agent",
+      "image": "public.ecr.aws/datadog/agent:latest",
+      "cpu": 256,
+      "memory": 512,
+      "essential": false,
+      "environment": [
+        { "name": "ECS_FARGATE", "value": "true" },
+        { "name": "DD_APM_ENABLED", "value": "false" }
+      ],
+      "secrets": [
+        { "name": "DD_API_KEY", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/datadog-api-key" },
+        { "name": "DD_SITE", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/dd-site" }
+      ]
     }
   ]
 }

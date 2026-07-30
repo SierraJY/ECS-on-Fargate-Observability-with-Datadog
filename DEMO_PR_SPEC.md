@@ -435,9 +435,10 @@
 
 #### 5.3 dd-trace (APM)
 
-- `ddtrace` 라이브러리 설치, 기동 명령 `ddtrace-run uvicorn main:app`
-- 환경변수: `DD_SERVICE`, `DD_ENV=demo`, `DD_AGENT_HOST=localhost`
-- 서비스 간 호출(httpx)의 트레이스 컨텍스트 자동 전파 여부 사전 확인 — Reservation→Inventory/Payment→Notification 체인이 트레이스 하나로 엮여야 함
+- `ddtrace==2.14.4` 라이브러리 설치(5개 서비스 requirements.txt), 기동 명령 `ddtrace-run uvicorn main:app`(5개 서비스 Dockerfile CMD)
+- 환경변수(Unified Service Tagging): `DD_SERVICE=<service명>`, `DD_ENV=dev`, `DD_VERSION=0.0.1`, `DD_AGENT_HOST=localhost`, `DD_TRACE_AGENT_PORT=8126`(기본값과 동일하지만 암묵적 의존 대신 명시)
+- Datadog Agent 컨테이너의 `DD_APM_ENABLED`를 `false`→`true`로 전환(4.1 인프라 메트릭만 쓰던 이전 라운드에서는 꺼둠)
+- 서비스 간 호출(httpx)의 트레이스 컨텍스트 자동 전파 여부 사전 확인 — Reservation→Inventory/Payment→Notification 체인이 트레이스 하나로 엮여야 함 (배포 후 Datadog APM Trace 화면에서 검증 예정)
 
 #### 5.4 네트워크 (보류)
 

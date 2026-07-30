@@ -127,3 +127,19 @@ async def release_seat(seat_id: str):
     if row is None:
         raise HTTPException(status_code=409, detail=f"seat {seat_id} is not locked")
     return dict(row)
+
+
+@app.post("/seats/{seat_id}/cancel")
+async def cancel_seat(seat_id: str):
+    async with app.state.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE seats SET status = 'AVAILABLE', locked_by = NULL, locked_at = NULL
+            WHERE seat_id = $1 AND status = 'BOOKED'
+            RETURNING seat_id, status
+            """,
+            seat_id,
+        )
+    if row is None:
+        raise HTTPException(status_code=409, detail=f"seat {seat_id} is not booked")
+    return dict(row)

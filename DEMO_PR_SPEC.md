@@ -66,12 +66,15 @@
 | 서비스 | Method / Path | Request Body | 성공 응답 | 실패 조건 |
 |---|---|---|---|---|
 | Gateway | `POST /reservations` | `{seat_id, user_id}` | Reservation 응답을 상태 코드 포함 그대로 전달 | Reservation 응답 그대로 전달 |
+| Gateway | `POST /reservations/{seat_id}/cancel` | `{user_id}` | Reservation 응답을 상태 코드 포함 그대로 전달 | Reservation 응답 그대로 전달 |
 | Gateway | `GET /health` | - | `{"status":"ok"}` | - |
 | Reservation | `POST /reservations` | `{seat_id, user_id}` | `{"status":"booked", seat_id, user_id}` (200) | Inventory/Payment 실패 시 409, confirm 실패 시 502 |
+| Reservation | `POST /reservations/{seat_id}/cancel` | `{user_id}` | `{"status":"cancelled", seat_id, user_id}` (200) | 좌석이 BOOKED 상태가 아니면 409 |
 | Reservation | `GET /health` | - | `{"status":"ok"}` | - |
 | Inventory | `POST /seats/{seat_id}/lock` | `{locked_by}` | `{seat_id, status:"LOCKED"}` (200) | 이미 잠김/BOOKED이거나 존재하지 않는 좌석 → 409 |
 | Inventory | `POST /seats/{seat_id}/confirm` | - | `{seat_id, status:"BOOKED"}` (200) | LOCKED 상태가 아니면 409 |
 | Inventory | `POST /seats/{seat_id}/release` | - | `{seat_id, status:"AVAILABLE"}` (200) | LOCKED 상태가 아니면 409 |
+| Inventory | `POST /seats/{seat_id}/cancel` | - | `{seat_id, status:"AVAILABLE"}` (200) | BOOKED 상태가 아니면 409 |
 | Inventory | `GET /seats` | - | 전체 좌석 배열 `[{seat_id, status, locked_by, locked_at}, ...]` | - |
 | Inventory | `GET /health` | - | `{"status":"ok"}` (DB 연결 확인 포함, 실패 시 503) | - |
 | Payment | `POST /charge` | `{user_id, amount}` | `{"status":"charged", user_id, amount}` (200, mock — 항상 성공. 장애 주입은 Phase 2에서 `/admin/chaos` 추가 예정) | - |

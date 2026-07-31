@@ -224,6 +224,11 @@
     - `AmazonECSTaskExecutionRolePolicy`는 `logs:CreateLogGroup` 미포함
     - `awslogs-create-group: true` 사용 시 이 권한 없으면 `ResourceInitializationError`로 태스크 기동 자체 실패
     - `ecs-demo-execution-role`에 `logs:CreateLogGroup`(리소스: `arn:aws:logs:ap-northeast-2:263232886346:log-group:/ecs/jy-project-*`) 인라인 정책 추가로 해결
+- [컨테이너 헬스체크]
+    - Gateway를 제외한 4개 서비스(Reservation/Inventory/Payment/Notification)는 ALB에 안 붙어 있어 헬스체크 자체가 없었고, taskdef에도 컨테이너 `healthCheck`가 없어서 ECS가 "프로세스가 살아있는지"만 보고 "앱이 실제로 정상 응답하는지"는 전혀 모르는 상태였음(Service Connect도 ECS가 아는 것 이상은 모름 — 같은 공백)
+    - 5개 서비스 앱 컨테이너 전부에 `healthCheck` 추가: `curl -f http://localhost:8000/health || exit 1`, `interval: 30`, `timeout: 5`, `retries: 3`, `startPeriod: 10`
+    - curl이 없던 4개 서비스(gateway/reservation/payment/notification) Dockerfile에 curl 설치 단계 추가(inventory는 RDS CA 번들 다운로드 때문에 이미 있었음)
+    - UNHEALTHY 판정되면 ECS가 태스크를 자동 교체하고, Service Connect도 그 태스크로는 라우팅을 멈춤 — desired count가 1이라 지금은 효과가 제한적이지만 replica를 늘리면 의미가 커짐
 
 #### 3.5 ECR
 
@@ -424,8 +429,10 @@
 
 #### 5.1 Datadog Agent 사이드카 (인프라 메트릭)
 
-- 이미지 `datadog/agent:latest`
-- 환경변수: `DD_API_KEY`(Secrets Manager), `ECS_FARGATE=true`, `DD_SITE`
+- 컨테이너명 `datadog-agent`, 이미지 `public.ecr.aws/datadog/agent:latest`(ECR Public, Docker Hub rate limit 회피 — 5.2의 FireLens 이미지 선택과 동일한 이유)
+- `cpu: 256`, `memory: 512`(6번 리소스 스펙), `essential: false`(Agent 장애가 앱까지 죽이지 않도록)
+- 환경변수: `ECS_FARGATE=true`, `DD_APM_ENABLED=true`(5.3 dd-trace 적용 이후)
+- `DD_API_KEY`/`DD_SITE`는 **Secrets Manager가 아니라 SSM Parameter Store**에서 `secrets.valueFrom`으로 Fargate 기동 시점에 직접 조회(3.7 참고) — RDS 자격증명과 달리 Datadog 쪽은 자동 로테이션이 필요 없어 무료 티어인 SSM으로 통일
 
 #### 5.2 FireLens 사이드카 (로그)
 

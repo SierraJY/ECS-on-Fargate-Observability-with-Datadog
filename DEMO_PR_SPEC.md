@@ -429,9 +429,13 @@
 
 #### 5.2 FireLens 사이드카 (로그)
 
-- `firelensConfiguration.type: fluentbit`
-- 앱 컨테이너 `logConfiguration.logDriver: awsfirelens`
-- Datadog 목적지 옵션에 `dd_service`를 서비스명으로 지정
+- 컨테이너명 `log-router`, 이미지 `public.ecr.aws/aws-observability/aws-for-fluent-bit:stable`(ECR Public, Docker Hub rate limit 회피)
+- `firelensConfiguration.type: fluentbit`, `options.enable-ecs-log-metadata: true`(로그에 ECS 클러스터/태스크/컨테이너 메타데이터 자동 태깅)
+- 앱 컨테이너 `logConfiguration.logDriver: awsfirelens`로 전환, `dependsOn`으로 `log-router` `START` 이후 기동하도록 지정(초기 로그 유실 방지)
+- Datadog 목적지 옵션: `Name: datadog`, `Host: http-intake.logs.${DD_SITE}`(CI가 SSM `dd-site` 값으로 등록 전 치환), `dd_service`를 서비스명으로 지정, `dd_tags: env:dev`
+- `secretOptions.apikey`는 SSM Parameter Store(`datadog-api-key`, SecureString)를 ECS가 Fargate 기동 시점에 직접 조회
+- `log-router` 자체의 프로세스 로그는 Datadog이 아니라 별도 CloudWatch 로그 그룹(`/ecs/jy-project-<service>-firelens`)으로 분리 — Fluent Bit 장애 시 디버깅 경로를 앱 로그 파이프라인과 독립시키기 위함
+- 이 전환 이후 앱 로그는 CloudWatch로 더 이상 가지 않고 Datadog으로만 전송됨(과거 CloudWatch 로그 그룹은 조회용으로 남겨둠, 정리 대상 아님)
 
 #### 5.3 dd-trace (APM)
 

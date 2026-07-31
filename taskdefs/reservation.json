@@ -27,14 +27,23 @@
         { "name": "DD_AGENT_HOST", "value": "localhost" },
         { "name": "DD_TRACE_AGENT_PORT", "value": "8126" }
       ],
+      "dependsOn": [
+        { "containerName": "log-router", "condition": "START" }
+      ],
       "logConfiguration": {
-        "logDriver": "awslogs",
+        "logDriver": "awsfirelens",
         "options": {
-          "awslogs-group": "/ecs/jy-project-reservation",
-          "awslogs-region": "ap-northeast-2",
-          "awslogs-stream-prefix": "reservation",
-          "awslogs-create-group": "true"
-        }
+          "Name": "datadog",
+          "Host": "http-intake.logs.${DD_SITE}",
+          "TLS": "on",
+          "provider": "ecs",
+          "dd_service": "reservation",
+          "dd_source": "python",
+          "dd_tags": "env:dev"
+        },
+        "secretOptions": [
+          { "name": "apikey", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/datadog-api-key" }
+        ]
       }
     },
     {
@@ -51,6 +60,28 @@
         { "name": "DD_API_KEY", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/datadog-api-key" },
         { "name": "DD_SITE", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/dd-site" }
       ]
+    },
+    {
+      "name": "log-router",
+      "image": "public.ecr.aws/aws-observability/aws-for-fluent-bit:stable",
+      "cpu": 128,
+      "memory": 256,
+      "essential": true,
+      "firelensConfiguration": {
+        "type": "fluentbit",
+        "options": {
+          "enable-ecs-log-metadata": "true"
+        }
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/jy-project-reservation-firelens",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "firelens",
+          "awslogs-create-group": "true"
+        }
+      }
     }
   ]
 }

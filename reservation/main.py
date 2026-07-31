@@ -30,6 +30,8 @@ def _set_span_tags(*, error: bool = False, **tags):
         return
     for key, value in tags.items():
         span.set_tag(key, value)
+    if error:
+        span.error = 1
 
 
 @app.get("/health")

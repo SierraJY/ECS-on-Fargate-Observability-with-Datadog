@@ -24,6 +24,13 @@
         { "name": "DD_AGENT_HOST", "value": "localhost" },
         { "name": "DD_TRACE_AGENT_PORT", "value": "8126" }
       ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      },
       "dependsOn": [
         { "containerName": "log-router", "condition": "START" }
       ],

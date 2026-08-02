@@ -1,7 +1,7 @@
 ### 1 개요
 
 - Goal
-    - 좌석 예약 도메인의 MSA를 ECS Fargate + Service Connect로 구축하고, Datadog으로 인프라·로그·APM(및 네트워크, 검증 후 반영 예정)을 통합 관측
+    - 좌석 예약 도메인의 MSA를 ECS Fargate + Service Connect로 구축하고, Datadog으로 인프라·로그·APM·네트워크(VPC Flow Logs, Service Connect 메트릭)를 통합 관측, Frontend+RUM/DBM은 Phase 3에서 추가 진행 중
 
 ---
 
@@ -10,6 +10,7 @@
 #### 2.1 토폴로지
 
 - `Gateway` → `Reservation` →`{ Inventory, Payment } (병렬)` → `Notification`
+- `Frontend`(Phase 3 추가)는 이 호출 체인에 포함되지 않음 — 브라우저가 ALB를 통해 Gateway를 직접 호출하는 정적 페이지, 서버사이드에서 다른 서비스를 호출하지 않음
 
 #### 2.2 서비스별 상세
 
@@ -35,12 +36,17 @@
 - **Notification**
     - 역할: 예약 확정 알림 mock (실제 발송 없이 로그만 남김)
     - 엔드포인트: `POST /notify`, `GET /health`
+- **Frontend** (Phase 3 추가)
+    - 역할: 좌석 예약 UI(정적 HTML/JS, nginx). 좌석 그리드 조회/예약/취소, 브라우저에서 Gateway를 직접 호출
+    - Gateway/Reservation에 `GET /seats` 패스스루 추가하여 좌석 목록 노출(기존엔 Inventory 내부용으로만 존재)
+    - Service Connect 미사용(서버사이드에서 다른 서비스 호출 없음), dd-trace 미적용(계측할 서버사이드 코드 없음, 대신 브라우저 관측은 RUM 예정)
 
 #### 2.3 공통 사항
 
 - Fast API로 구축예정
 - `portMappings`에 `appProtocol: HTTP` 지정 (Service Connect L7 메트릭 활성화 조건)
-- 5개 서비스 모두 Datadog Agent 사이드카 + FireLens 사이드카 + dd-trace 계측 동일 적용
+- Gateway/Reservation/Inventory/Payment/Notification 5개 서비스는 Datadog Agent 사이드카 + FireLens 사이드카 + dd-trace 계측 동일 적용
+- Frontend는 Datadog Agent + FireLens는 동일 적용하되 dd-trace는 제외(2.2 참고)
 
 #### 2.4 API 상세 및 동작 흐름 (Phase 1 구현 기준)
 
@@ -135,6 +141,7 @@
             - 생성 완료 후, 이 SG를 다시 열어서Inbound rules 1개 추가
                 - Type Custom TCP, Port 8000, Source Custom → 자기 자신(jy-project-ecs-task-sg) 선택 후 저장
                 - Service Connect로 서비스끼리 통신할 때 필요한 규칙
+            - (Phase 3 추가) Type Custom TCP, Port 80, Source Custom → `jy-project-alb-sg` — Frontend 컨테이너(nginx) 인바운드용
         - Outbound rules
             - 기본값
     - `jy-project-rds-sg`
@@ -152,6 +159,10 @@
         - Protocol: HTTP, Port: 8000 (Gateway 컨테이너 포트와 동일)
         - VPC: `jy-project-vpc`
         - Health checks: Health check path`/health`
+    - `jy-project-frontend-tg` (Phase 3 추가)
+        - Target type: IP addresses, Protocol: HTTP, Port: 80 (nginx 컨테이너 포트)
+        - VPC: `jy-project-vpc`
+        - Health checks: Health check path `/`
 - [ALB]
     - `jy-project-alb`
         - Scheme: Internet-facing
@@ -159,8 +170,11 @@
         - VPC: `jy-project-vpc`
         - Mappings: **Public** 서브넷 2개(2a, 2c)
         - Security groups: `jy-project-alb-sg`
-        - Listeners and routing: Protocol HTTP, Port 80 → `jy-project-gateway-tg`
+        - Listeners and routing: Protocol HTTP, Port 80
+            - Rule(Priority 1): path-pattern `/reservations*`, `/seats`, `/health` → `jy-project-gateway-tg`
+            - Default action: `jy-project-frontend-tg` (Phase 3부터 — 이전엔 default가 gateway-tg였음)
         - Reservation/Inventory/Payment/Notification은 ALB 미연결 — Service Connect 내부 통신만
+        - Frontend는 ALB에 연결되지만 Service Connect는 미사용(2.2 참고)
 
 #### 3.3 RDS (Inventory 전용)
 
@@ -213,6 +227,7 @@
     | Gateway | 클라이언트 모드 | Reservation만 호출, ALB가 태스크 IP 직접 타겟팅이라 Gateway를 부르는 서비스 없음 |
     | Reservation | 클라이언트-서버 모드 | Gateway가 호출(서버) + Inventory/Payment/Notification 호출(클라이언트) |
     | Inventory / Payment / Notification | 클라이언트-서버 모드 | Reservation이 호출 |
+    | Frontend (Phase 3) | **미사용** | 서버사이드에서 다른 서비스를 호출하지 않음(브라우저가 직접 ALB 호출) — Service Connect 자체를 켤 필요 없음 |
 
     - 클라이언트 모드도 Service Connect 자체(네임스페이스 `jy-project`)는 켜져 있어야 함 — 짧은 이름은 Envoy 사이드카 기반 특수 주소라 호출하는 쪽도 꺼져 있으면 통신 불가
     - 클라이언트-서버 모드: 포트 매핑(`inventory-8000` 등) 추가 + Discovery name을 서비스명 그대로(`inventory` 등) 직접 지정
@@ -232,12 +247,13 @@
 
 #### 3.5 ECR
 
-- 리포지토리 5개(서비스당 1개)
+- 리포지토리 6개(서비스당 1개, Phase 3에서 frontend 추가)
     - `jy-project/gateway`
     - `jy-project/reservation`
     - `jy-project/inventory`
     - `jy-project/payment`
     - `jy-project/notification`
+    - `jy-project/frontend`
 
 ### 3.6 IAM Role
 
@@ -425,7 +441,8 @@
 
 ## 5. 관측성 통합 체크리스트
 
-- 5개 서비스 전부 동일 적용 (Notification 포함 — 하나라도 빠지면 5.3 Trace-to-Log 체인이 끊김).
+- 5개 서비스(Gateway/Reservation/Inventory/Payment/Notification) 전부 동일 적용 (Notification 포함 — 하나라도 빠지면 5.3 Trace-to-Log 체인이 끊김)
+- Frontend(Phase 3 추가)는 5.1/5.2는 동일 적용, 5.3(dd-trace)만 제외(2.2 참고)
 
 #### 5.1 Datadog Agent 사이드카 (인프라 메트릭)
 
@@ -452,11 +469,19 @@
 - 서비스 간 호출(httpx)의 트레이스 컨텍스트 자동 전파 여부 사전 확인 — Reservation→Inventory/Payment→Notification 체인이 트레이스 하나로 엮여야 함 (배포 후 Datadog APM Trace 화면에서 검증 완료)
 - **커스텀 span 태그(Reservation)**: 장애/보상 트랜잭션 진단용으로 `seat_id`, `usr.id`(user_id)를 모든 요청에, 실패 시 `failure.stage`(`lock`/`charge`/`confirm`/`cancel`)와 `failure.reason`(`inventory_failed`/`payment_failed`/`confirm_failed`/`not_booked`)을 추가 태깅. ddtrace가 기본적으로 5xx만 에러로 자동 마킹하는 점을 보완하기 위해 409/502 실패 지점에서 `span.error = 1`을 명시적으로 설정
 
-#### 5.4 네트워크 (보류)
+#### 5.4 네트워크 (Phase 3에서 구현 완료)
 
-- 데모 진행하며 검증 후 반영 예정 (CNM / VPC Flow Logs / Service Connect 메트릭 중 확정).
+- CNM은 Preview·별도 신청 필요로 채택 불가 확정 → self-service 대안으로 아래 두 가지 구현(README 4.2 참고)
+- **VPC Flow Logs**: VPC Flow Logs → Kinesis Data Firehose(직접) → Datadog. 실제 트래픽으로 end-to-end 검증 완료. 비용 절감을 위해 PoC 이후 리소스는 비활성화(상시 운영 안 함)
+- **Service Connect 메트릭**: `AWS/ECS` 네임스페이스 CloudWatch 네이티브 메트릭 자동 수집 확인, Datadog 연동은 CloudWatch Metric Streams(Firehose, OpenTelemetry 1.0 포맷) 채택 — 이쪽은 상시 운영 유지
+- Envoy Access Logs(보조 경로)는 검토 후 스킵 — dd-trace + FireLens로 Trace-to-Log 체인이 이미 충분
 
-#### 5.5 대시보드 및 알림
+#### 5.5 Frontend + RUM (Phase 3, 진행 중)
+
+- Frontend 서비스(정적 페이지, nginx) 배포 완료 — ALB 경로 기반 라우팅(`/reservations*`, `/seats`, `/health` → Gateway, 나머지 default → Frontend)으로 실제 좌석 예약 UI 동작 확인
+- Datadog RUM(Browser) 연동은 **아직 미착수** — 다음 단계
+
+#### 5.6 대시보드 및 알림
 
 - 대시보드 위젯: 서비스별 CPU/메모리(5.1), 에러 로그 건수(5.2), 트레이스 에러율·레이턴시(5.3)
 - Monitor 예시: Payment 에러율 임계치 초과, Reservation 종단 레이턴시 임계치 초과 — 5.3 데모에서 장애를 최초로 감지하는 트리거

@@ -87,11 +87,11 @@
     - Fargate는 이 설치 자체가 불가능하다. → 4.1에서 해결
 - **로그 수집 제약**
     - 호스트의 로그 파일(`/var/log/...`)에 접근하거나 호스트 단위로 로그 수집 에이전트를 설치하는 방식이 불가능하다. → 4.3에서 해결
-- **~~커널 레벨 네트워크 모니터링 제약~~**
-    - ~~Datadog Cloud Network Monitoring(CNM)은 eBPF 기반 system-probe로 커널 레벨에서 패킷·커넥션을 관찰하는데, 이 역시 커널 접근을 전제로 한다~~
-    - ~~ECS Fargate에서 CNM은 **Preview 단계이며 Datadog 담당자에게 별도 신청해야 활성화 가능**하다 (self-service 불가)~~
-    - ~~활성화 시 표준 eBPF 방식이 아닌 eBPF-less 모드로 동작하며, 다음 3개 환경변수와 capability가 모두 필요하다~~
-        - ~~Datadog Agent 7.58 이상 필요~~
+- **커널 레벨 네트워크 모니터링 제약**
+    - Datadog Cloud Network Monitoring(CNM)은 eBPF 기반 system-probe로 커널 레벨에서 패킷·커넥션을 관찰하는데, 이 역시 커널 접근을 전제로 한다
+    - ECS Fargate에서 CNM은 **Preview 단계이며 Datadog 담당자에게 별도 신청해야 활성화 가능**하다 (self-service 불가) → Phase 3에서 CNM 자체는 채택 불가로 확정, self-service 대안(VPC Flow Logs)으로 대체 → 4.2.1에서 해결
+    - (참고, CNM 활성화 시 필요했을 설정 — 채택은 안 했지만 비교를 위해 남겨둠)
+        - Datadog Agent 7.58 이상 필요
         
         ```jsx
         {
@@ -124,16 +124,16 @@
         
         ```
         
-    - ~~→ 4.2에서 대안(정확히는 "보완책": CNM 자체의 대체가 아니라 별도 관측 지점 확보) 제시~~
+    - → 4.2.1에서 대안(정확히는 "보완책": CNM 자체의 대체가 아니라 별도 관측 지점 확보) 제시
 
-### ~~3.2 Service Connect 프록시 메트릭 미노출 문제~~
+### 3.2 Service Connect 프록시 메트릭 미노출 문제
 
-- ~~2.3에서 설명한 Envoy 기반 프록시는 Task 내 모든 서비스 간 트래픽을 중계하므로, 이론적으로는 마이크로서비스 간 RPS·에러율·레이턴시·커넥션 상태를 관측할 수 있는 최적의 지점이다~~
-- ~~그러나 Service Connect의 Envoy는 완전 관리형(Managed Envoy)이다. App Mesh나 Kubernetes/Istio처럼 사용자가 Envoy bootstrap 설정, 사이드카 이미지, admin 인터페이스 노출 여부를 직접 제어하는 구조가 아니라, AWS가 프록시 배포·설정을 전담하고 사용자에게는 timeout 값 등 극히 제한된 파라미터만 노출한다~~
-- ~~이로 인해 표준적인 Envoy 관측 방법(admin/stats 엔드포인트 노출 → Prometheus 스타일 카운터 수집)이 원천적으로 불가능하다~~
-    - ~~이건 "기본값이 꺼져 있어서 켜야 하는" 문제가 아니라 "사용자가 켤 수 있는 수단 자체가 없는" 문제다~~
-- ~~즉 3.1이 "커널에 접근할 수단이 없다"는 제약이라면, 3.2는 "Envoy 내부에 접근할 수단이 없다"는 같은 층위의 제약이다. 둘 다 관리형 서비스가 특정 레이어를 완전히 추상화하면서 생기는 구조적 공백이라는 공통점이 있다~~
-- ~~따라서 해결책은 Envoy 내부를 들여다보는 방식이 아니라, AWS가 자체적으로 큐레이션해서 외부로 노출하는 대체 관측 지점(CloudWatch 네이티브 메트릭, Access Logs)을 활용하는 방식이어야 한다 → 4.2.2에서 해결~~
+- 2.3에서 설명한 Envoy 기반 프록시는 Task 내 모든 서비스 간 트래픽을 중계하므로, 이론적으로는 마이크로서비스 간 RPS·에러율·레이턴시·커넥션 상태를 관측할 수 있는 최적의 지점이다
+- 그러나 Service Connect의 Envoy는 완전 관리형(Managed Envoy)이다. App Mesh나 Kubernetes/Istio처럼 사용자가 Envoy bootstrap 설정, 사이드카 이미지, admin 인터페이스 노출 여부를 직접 제어하는 구조가 아니라, AWS가 프록시 배포·설정을 전담하고 사용자에게는 timeout 값 등 극히 제한된 파라미터만 노출한다
+- 이로 인해 표준적인 Envoy 관측 방법(admin/stats 엔드포인트 노출 → Prometheus 스타일 카운터 수집)이 원천적으로 불가능하다
+    - 이건 "기본값이 꺼져 있어서 켜야 하는" 문제가 아니라 "사용자가 켤 수 있는 수단 자체가 없는" 문제다
+- 즉 3.1이 "커널에 접근할 수단이 없다"는 제약이라면, 3.2는 "Envoy 내부에 접근할 수단이 없다"는 같은 층위의 제약이다. 둘 다 관리형 서비스가 특정 레이어를 완전히 추상화하면서 생기는 구조적 공백이라는 공통점이 있다
+- 따라서 해결책은 Envoy 내부를 들여다보는 방식이 아니라, AWS가 자체적으로 큐레이션해서 외부로 노출하는 대체 관측 지점(CloudWatch 네이티브 메트릭)을 활용하는 방식이어야 한다 → 4.2.2에서 해결
 
 ---
 
@@ -154,38 +154,31 @@
     - 컨테이너의 stdout/stderr는 컨테이너 런타임이 가로채 지정된 로그 드라이버로 전달하는 구조이며, 이 전달 경로에 개입하려면 `awsfirelens` 같은 로그 드라이버로 명시적으로 라우팅해야 한다
     - Datadog Agent는 이 로그 드라이버 역할을 하지 않으므로, 사이드카로 떠 있는 것만으로는 다른 컨테이너의 로그를 수집할 수 없다
 
-### ~~4.2 네트워크 모니터링~~
+### 4.2 네트워크 모니터링 (Phase 3에서 구현)
 
-#### ~~4.2.1 커널 레벨 네트워크 제약 해결 (VPC Flow Logs)~~
+#### 4.2.1 커널 레벨 네트워크 제약 해결 (VPC Flow Logs)
 
-- ~~3.1의 커널 레벨 제약(CNM) 대응~~
-- ~~CNM은 Preview·신청 필요 → self-service 대안으로 VPC Flow Logs 채택~~
-- ~~파이프라인: VPC Flow Logs → Firehose/S3/CloudWatch Logs → (Forwarder Lambda) → Datadog~~
-- ~~ECS 메타데이터(Service/Cluster name) 포함 가능, 단 지원 리전 제한 있음~~
-- ~~한계: 로그 기반 지연(수 분), DNS 쿼리 레벨 상세 없음, 프로세스 단위 귀속 불가~~
+- 3.1의 커널 레벨 제약(CNM) 대응 — CNM은 Preview·별도 신청 필요라 채택 불가로 확정, self-service 대안으로 VPC Flow Logs 채택
+- **실제 구현한 파이프라인**: VPC Flow Logs → **Kinesis Data Firehose(직접 전송)** → Datadog HTTP endpoint
+    - VPC Flow Logs가 콘솔에서 "같은 계정에서 Amazon Data Firehose로 전송"을 목적지로 직접 지원 — CloudWatch Logs 로그 그룹이나 구독 필터를 거칠 필요 없이 더 단순한 구조로 구현됨(당초 검토했던 S3/CloudWatch Logs 경유 방식보다 단순)
+    - Firehose destination은 Datadog Logs 엔드포인트(HTTP), API Key는 Firehose 설정에 직접 입력
+- **검증 완료**: 실제 트래픽(ALB→Gateway, Gateway→Reservation 등) 발생시켜 Datadog Log Explorer에서 ENI 단위 flow record 수신 확인
+- **상시 운영**: PoC 검증 후 비용 절감을 위해 VPC Flow Log 리소스는 비활성화 — 필요 시 동일 Firehose 스트림에 재연결하면 즉시 재사용 가능
+- 한계: 로그 기반 수 분 단위 지연, DNS 쿼리 레벨 상세 없음, 프로세스 단위 귀속 불가(ENI 단위까지만 구분)
 
-#### ~~4.2.2 Service Connect 프록시 메트릭 수집~~
+#### 4.2.2 Service Connect 프록시 메트릭 수집
 
-- ~~원인: Service Connect의 Envoy는 완전 관리형(Managed)이라 사용자가 Envoy 설정에
-개입할 수 없음 (3.2 참조)~~
-- ~~주 경로: 네이티브 CloudWatch 메트릭 (AWS/ECS 네임스페이스)
-- portMappings에 appProtocol(HTTP/HTTP2/GRPC) 지정
-- RequestCount, HTTPCode_Target_4XX/5XX_Count, TargetResponseTime,
-ActiveConnectionCount, NewConnectionCount
-- Datadog: 기존 AWS Integration(ECS 네임스페이스 폴링)으로 수집 예상,
-배포 후 Metrics Explorer에서 실제 수집 여부 검증 필수
-- 미수집 시 대체: CloudWatch Metric Streams(Kinesis Firehose)~~
-- ~~보조 경로: Envoy Access Logs
-- serviceConnectConfiguration.accessLogConfiguration, Fargate 1.4.0+
-- awsfirelens로 앱 로그와 분리, 4.3 파이프라인 재사용
-- 용도: 5.3 Trace-to-Log 시연 시 요청 단위 상세 추적~~
-- ~~3.2의 Service Connect Envoy 메트릭 미노출 대응~~
-- ~~Service Connect 네이티브 CloudWatch 메트릭 + Envoy Access Logs 병행~~
-- **~~수집 지표~~**
-    - ~~RPS(`envoy.cluster.upstream_rq_total`)~~
-    - ~~에러율(`envoy.cluster.upstream_rq_xx`)~~
-    - ~~레이턴시(`envoy.cluster.upstream_rq_time`)~~
-    - ~~커넥션 상태(`envoy.cluster.upstream_cx_active`)~~
+- 원인: Service Connect의 Envoy는 완전 관리형(Managed)이라 사용자가 Envoy 설정에 개입할 수 없음 (3.2 참조)
+- **주 경로: 네이티브 CloudWatch 메트릭 (`AWS/ECS` 네임스페이스) — 검증 완료**
+    - `portMappings`에 `appProtocol: http` 지정과 `serviceConnectConfiguration.enabled: true`만으로 별도 활성화 설정 없이 자동 emit됨을 확인
+    - 확인된 지표: `RequestCount`, `RequestCountPerTarget`, `HTTPCode_Target_2XX/4XX/5XX_Count`, `TargetResponseTime`, `ActiveConnectionCount`, `NewConnectionCount`
+    - 차원(dimension) 조합에 따라 "서버 역할"(`DiscoveryName`) 지표와 "클라이언트 역할"(`TargetDiscoveryName`, 예: Reservation→Inventory 호출) 지표가 구분되어 emit됨
+- **Datadog 연동: CloudWatch Metric Streams(Kinesis Data Firehose 경유) 채택** — 폴링 방식(AWS Integration) 대신 실시간에 가까운(2~3분) 스트리밍 방식 선택
+    - **주의**: Output format은 반드시 **OpenTelemetry**(v1.0 권장)여야 함 — JSON으로 두면 Firehose 전송 자체는 성공해도 Datadog이 파싱하지 못해 지표가 전혀 안 잡힘(로그용 Firehose와 요구 포맷이 다름)
+    - **주의**: Metric Streams를 쓰더라도 Datadog에 해당 AWS 계정이 연동(Integrations → AWS)되어 있어야 지표가 인식됨 — 로그(Flow Logs)와 달리 계정 연동이 선행 조건
+    - Datadog AWS Integration의 "Metric Collection" on/off 토글은 API 폴링에만 영향을 주고 Metric Streams 자체는 AWS 쪽 리소스를 직접 삭제/수정해야만 끌 수 있음(통제 실험으로 확인)
+    - 이 경로는 상시 운영도 스트리밍 방식 유지(트랙 A의 VPC Flow Logs와 달리 폴링으로 전환하지 않음)
+- 보조 경로(Envoy Access Logs)는 검토 후 스킵 — 이미 dd-trace APM(요청 단위 상세) + FireLens 앱 로그로 Metric→APM→Log 데모 체인이 충분히 완결되어 추가 실익이 크지 않다고 판단
     
 
 ### 4.3 로그 수집

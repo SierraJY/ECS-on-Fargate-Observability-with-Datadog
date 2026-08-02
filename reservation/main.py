@@ -39,6 +39,13 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/seats")
+async def list_seats():
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(f"{INVENTORY_URL}/seats")
+    return resp.json()
+
+
 @app.post("/reservations")
 async def create_reservation(body: ReservationBody):
     _set_span_tags(**{"seat_id": body.seat_id, "usr.id": body.user_id})

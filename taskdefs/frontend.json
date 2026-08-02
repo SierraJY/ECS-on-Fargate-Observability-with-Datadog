@@ -1,0 +1,86 @@
+{
+  "family": "jy-project-frontend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "${ECS_EXECUTION_ROLE_ARN}",
+  "taskRoleArn": "${ECS_TASK_ROLE_ARN}",
+  "containerDefinitions": [
+    {
+      "name": "frontend",
+      "image": "263232886346.dkr.ecr.ap-northeast-2.amazonaws.com/jy-project/frontend:PLACEHOLDER",
+      "cpu": 128,
+      "memory": 256,
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 80, "protocol": "tcp", "appProtocol": "http", "name": "frontend-80" }
+      ],
+      "environment": [
+        { "name": "ECS_FARGATE", "value": "true" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost/ || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      },
+      "dependsOn": [
+        { "containerName": "log-router", "condition": "START" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awsfirelens",
+        "options": {
+          "Name": "datadog",
+          "Host": "http-intake.logs.${DD_SITE}",
+          "TLS": "on",
+          "provider": "ecs",
+          "dd_service": "frontend",
+          "dd_source": "nginx",
+          "dd_tags": "env:dev"
+        },
+        "secretOptions": [
+          { "name": "apikey", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/datadog-api-key" }
+        ]
+      }
+    },
+    {
+      "name": "datadog-agent",
+      "image": "public.ecr.aws/datadog/agent:latest",
+      "cpu": 256,
+      "memory": 512,
+      "essential": false,
+      "environment": [
+        { "name": "ECS_FARGATE", "value": "true" },
+        { "name": "DD_APM_ENABLED", "value": "false" }
+      ],
+      "secrets": [
+        { "name": "DD_API_KEY", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/datadog-api-key" },
+        { "name": "DD_SITE", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/dd-site" }
+      ]
+    },
+    {
+      "name": "log-router",
+      "image": "public.ecr.aws/aws-observability/aws-for-fluent-bit:stable",
+      "cpu": 128,
+      "memory": 256,
+      "essential": true,
+      "firelensConfiguration": {
+        "type": "fluentbit",
+        "options": {
+          "enable-ecs-log-metadata": "true"
+        }
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/jy-project-frontend-firelens",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "firelens",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

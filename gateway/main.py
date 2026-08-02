@@ -2,11 +2,19 @@ import os
 
 import httpx
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 RESERVATION_URL = os.getenv("RESERVATION_URL", "http://reservation:8000")
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class ReservationBody(BaseModel):
@@ -21,6 +29,22 @@ class CancelBody(BaseModel):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/seats")
+async def list_seats():
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            resp = await client.get(f"{RESERVATION_URL}/seats")
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=502, detail=f"reservation service unreachable: {exc}"
+            )
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        media_type=resp.headers.get("content-type"),
+    )
 
 
 @app.post("/reservations")

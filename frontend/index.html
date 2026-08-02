@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>좌석 예약</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>좌석 예약</h1>
+    <div class="user-box">
+      <label for="user-id">내 ID</label>
+      <input id="user-id" type="text" placeholder="user id" />
+      <button id="logout-btn" type="button">로그아웃</button>
+    </div>
+  </header>
+
+  <section class="legend">
+    <span class="legend-item"><i class="dot available"></i>예약 가능</span>
+    <span class="legend-item"><i class="dot locked"></i>잠김(결제 중)</span>
+    <span class="legend-item"><i class="dot booked"></i>예약됨</span>
+    <span class="legend-item"><i class="dot mine"></i>내 예약</span>
+  </section>
+
+  <p id="status-message" class="status-message"></p>
+
+  <main class="cabin">
+    <div class="cockpit"></div>
+    <div id="seat-grid" class="seat-grid"></div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

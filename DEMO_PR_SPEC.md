@@ -166,11 +166,11 @@
         - Target type: **IP addresses** (awsvpc 모드라 반드시)
         - Protocol: HTTP, Port: 8000 (Gateway 컨테이너 포트와 동일)
         - VPC: `jy-project-vpc`
-        - Health checks: Health check path`/health`
+        - Health checks: Health check path`/health`, interval **180초**(Phase 5 전 콘솔에서 30초 → 180초로 조정)
     - `jy-project-frontend-tg` (Phase 3 추가)
         - Target type: IP addresses, Protocol: HTTP, Port: 80 (nginx 컨테이너 포트)
         - VPC: `jy-project-vpc`
-        - Health checks: Health check path `/`
+        - Health checks: Health check path `/`, interval **180초**(위와 동일하게 조정)
 - [ALB]
     - `jy-project-alb`
         - Scheme: Internet-facing
@@ -250,6 +250,7 @@
 - [컨테이너 헬스체크]
     - Gateway를 제외한 4개 서비스(Reservation/Inventory/Payment/Notification)는 ALB에 안 붙어 있어 헬스체크 자체가 없었고, taskdef에도 컨테이너 `healthCheck`가 없어서 ECS가 "프로세스가 살아있는지"만 보고 "앱이 실제로 정상 응답하는지"는 전혀 모르는 상태였음(Service Connect도 ECS가 아는 것 이상은 모름 — 같은 공백)
     - 5개 서비스 앱 컨테이너 전부에 `healthCheck` 추가: `curl -f http://localhost:8000/health || exit 1`, `interval: 30`, `timeout: 5`, `retries: 3`, `startPeriod: 10`
+    - **정정(Phase 5 전)**: 헬스체크가 너무 잦다는 판단으로 6개 서비스(Frontend 포함) 전부 `interval`을 30초 → **180초**로 완화
     - curl이 없던 4개 서비스(gateway/reservation/payment/notification) Dockerfile에 curl 설치 단계 추가(inventory는 RDS CA 번들 다운로드 때문에 이미 있었음)
     - UNHEALTHY 판정되면 ECS가 태스크를 자동 교체하고, Service Connect도 그 태스크로는 라우팅을 멈춤 — desired count가 1이라 지금은 효과가 제한적이지만 replica를 늘리면 의미가 커짐
 

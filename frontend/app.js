@@ -4,6 +4,8 @@ const POLL_INTERVAL_MS = 5000;
 const grid = document.getElementById("seat-grid");
 const userInput = document.getElementById("user-id");
 const statusMessage = document.getElementById("status-message");
+const statusText = document.getElementById("status-text");
+const statusClose = document.getElementById("status-close");
 const logoutBtn = document.getElementById("logout-btn");
 
 function getUserId() {
@@ -30,16 +32,16 @@ logoutBtn.addEventListener("click", () => {
   location.reload();
 });
 
-function showMessage(text) {
-  statusMessage.textContent = text;
-  if (text) {
-    setTimeout(() => {
-      if (statusMessage.textContent === text) {
-        statusMessage.textContent = "";
-      }
-    }, 4000);
-  }
+function showMessage(text, type = "error") {
+  statusText.textContent = text;
+  statusMessage.classList.toggle("visible", Boolean(text));
+  statusMessage.classList.toggle("success", type === "success");
 }
+
+statusClose.addEventListener("click", () => {
+  statusText.textContent = "";
+  statusMessage.classList.remove("visible");
+});
 
 function seatClassName(seat, userId) {
   if (seat.status === "AVAILABLE") return "available";
@@ -50,12 +52,29 @@ function seatClassName(seat, userId) {
   return "booked";
 }
 
-function sortSeatsNaturally(seats) {
-  return [...seats].sort((a, b) => {
-    const numA = parseInt(a.seat_id.replace(/\D/g, ""), 10);
-    const numB = parseInt(b.seat_id.replace(/\D/g, ""), 10);
-    return numA - numB;
-  });
+const ROW_ORDER = ["A", "B", "C", "D", "E", "F"];
+
+function groupSeatsByRow(seats) {
+  const rows = new Map();
+  for (const seat of seats) {
+    const match = seat.seat_id.match(/^([A-Za-z]+)(\d+)$/);
+    if (!match) continue;
+    const [, row, numStr] = match;
+    if (!rows.has(row)) rows.set(row, []);
+    rows.get(row).push({ ...seat, _num: parseInt(numStr, 10) });
+  }
+  for (const seatList of rows.values()) {
+    seatList.sort((a, b) => a._num - b._num);
+  }
+  return rows;
+}
+
+function splitRowSections(seatList) {
+  return {
+    left: seatList.filter((s) => s._num < 10),
+    center: seatList.filter((s) => s._num >= 10 && s._num <= 21),
+    right: seatList.filter((s) => s._num >= 22),
+  };
 }
 
 function makeSeatButton(seat, userId) {
@@ -68,23 +87,41 @@ function makeSeatButton(seat, userId) {
   return button;
 }
 
+function makeRowLabel(row) {
+  const label = document.createElement("span");
+  label.className = "row-label";
+  label.textContent = row;
+  return label;
+}
+
 function renderSeats(seats) {
   const userId = userInput.value.trim() || getUserId();
-  const sorted = sortSeatsNaturally(seats);
+  const rows = groupSeatsByRow(seats);
   grid.innerHTML = "";
 
-  for (let i = 0; i < sorted.length; i += 4) {
-    const row = document.createElement("div");
-    row.className = "seat-row";
-    const chunk = sorted.slice(i, i + 4);
+  for (const row of ROW_ORDER) {
+    const seatList = rows.get(row);
+    if (!seatList) continue;
 
-    chunk.slice(0, 2).forEach((seat) => row.appendChild(makeSeatButton(seat, userId)));
-    const aisle = document.createElement("div");
-    aisle.className = "aisle";
-    row.appendChild(aisle);
-    chunk.slice(2, 4).forEach((seat) => row.appendChild(makeSeatButton(seat, userId)));
+    const rowEl = document.createElement("div");
+    rowEl.className = "theater-row";
+    rowEl.appendChild(makeRowLabel(row));
 
-    grid.appendChild(row);
+    const { left, center, right } = splitRowSections(seatList);
+    [left, center, right].forEach((section, idx) => {
+      const sectionEl = document.createElement("div");
+      sectionEl.className = "seat-section";
+      section.forEach((seat) => sectionEl.appendChild(makeSeatButton(seat, userId)));
+      rowEl.appendChild(sectionEl);
+      if (idx < 2) {
+        const aisle = document.createElement("div");
+        aisle.className = "aisle";
+        rowEl.appendChild(aisle);
+      }
+    });
+
+    rowEl.appendChild(makeRowLabel(row));
+    grid.appendChild(rowEl);
   }
 }
 
@@ -115,7 +152,7 @@ async function handleSeatClick(seat, cls) {
       if (!res.ok) {
         showMessage(body.detail || `예약 실패 (${res.status})`);
       } else {
-        showMessage(`${seat.seat_id} 예약 완료`);
+        showMessage(`${seat.seat_id} 예약 완료`, "success");
       }
     } catch (err) {
       showMessage("예약 요청 중 오류가 발생했습니다");
@@ -137,7 +174,7 @@ async function handleSeatClick(seat, cls) {
       if (!res.ok) {
         showMessage(body.detail || `취소 실패 (${res.status})`);
       } else {
-        showMessage(`${seat.seat_id} 취소 완료`);
+        showMessage(`${seat.seat_id} 취소 완료`, "success");
       }
     } catch (err) {
       showMessage("취소 요청 중 오류가 발생했습니다");

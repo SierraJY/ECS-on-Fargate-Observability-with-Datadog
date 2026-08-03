@@ -47,11 +47,16 @@
     <span class="legend-item"><i class="dot mine"></i>내 예약</span>
   </section>
 
-  <p id="status-message" class="status-message"></p>
+  <div id="status-message" class="status-message">
+    <button id="status-close" class="status-close" type="button" aria-label="닫기">&times;</button>
+    <span id="status-text"></span>
+  </div>
 
-  <main class="cabin">
-    <div class="cockpit"></div>
-    <div id="seat-grid" class="seat-grid"></div>
+  <main class="theater-wrap">
+    <div class="theater">
+      <div class="screen">SCREEN</div>
+      <div id="seat-grid" class="seat-grid"></div>
+    </div>
   </main>
 
   <script src="app.js"></script>

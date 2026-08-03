@@ -14,7 +14,15 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
 DB_SSLMODE = os.getenv("DB_SSLMODE", "disable")  # disable | verify-full
 DB_SSL_CA_PATH = os.getenv("DB_SSL_CA_PATH", "/app/global-bundle.pem")
 
-SEAT_COUNT = 20
+ROWS = ["A", "B", "C", "D", "E", "F"]
+
+
+def _build_theater_seat_ids():
+    seat_ids = []
+    for i, row in enumerate(ROWS):
+        numbers = list(range(6 - i, 10)) + list(range(10, 22)) + list(range(22, 26 + i))
+        seat_ids.extend(f"{row}{n}" for n in numbers)
+    return seat_ids
 
 
 def _build_ssl_context():
@@ -44,12 +52,14 @@ async def lifespan(app: FastAPI):
             )
             """
         )
-        count = await conn.fetchval("SELECT COUNT(*) FROM seats")
-        if count == 0:
-            await conn.executemany(
-                "INSERT INTO seats (seat_id) VALUES ($1)",
-                [(f"A{i}",) for i in range(1, SEAT_COUNT + 1)],
-            )
+        target_ids = _build_theater_seat_ids()
+        await conn.executemany(
+            "INSERT INTO seats (seat_id) VALUES ($1) ON CONFLICT (seat_id) DO NOTHING",
+            [(sid,) for sid in target_ids],
+        )
+        await conn.execute(
+            "DELETE FROM seats WHERE seat_id != ALL($1::text[])", target_ids
+        )
     yield
     await app.state.pool.close()
 

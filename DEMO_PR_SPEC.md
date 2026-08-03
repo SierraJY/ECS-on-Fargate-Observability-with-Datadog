@@ -65,7 +65,9 @@
 
 **실패 흐름 (보상 트랜잭션)**
 
-- `Inventory` lock 또는 `Payment` charge 중 하나라도 실패하면, 성공했던 쪽(주로 lock)을 `Inventory`의 `POST /seats/{seat_id}/release`로 되돌려 좌석을 `AVAILABLE` 상태로 복구시킨 뒤 409 반환 — `{"detail": "reservation failed: inventory failed"}` 또는 `payment failed`
+- `Inventory` lock 또는 `Payment` charge 중 하나라도 실패하면, 성공했던 쪽(주로 lock)을 `Inventory`의 `POST /seats/{seat_id}/release`로 되돌려 좌석을 `AVAILABLE` 상태로 복구
+    - **Phase 4에서 정정(2026-08-03)**: 실패 원인에 따라 상태 코드 분리 — `Payment` 실패(다운스트림 서비스 장애, 리소스 충돌 아님)는 **502** 반환, `Inventory` lock만 실패(좌석이 이미 잠김/예약됨, 진짜 리소스 충돌)는 **409** 반환. 둘 다 실패하면 502 우선. 응답 바디는 동일하게 `{"detail": "reservation failed: inventory failed"}` 또는 `payment failed`(또는 둘 다)
+    - 이 구분에 맞춰 APM span도 조정: 409(순수 좌석 충돌)는 non-error, 502(Payment 장애)는 ddtrace의 5xx 자동 마킹으로 error 처리(PHASE4 트랙 B/D 참고 — 로그 파이프라인에서도 409는 error 대신 warning으로 재분류)
 - lock·charge는 둘 다 성공했으나 confirm이 실패하는 예외 케이스는 마찬가지로 release 호출 후 502 반환
 
 **서비스별 API 상세**
@@ -75,7 +77,7 @@
 | Gateway | `POST /reservations` | `{seat_id, user_id}` | Reservation 응답을 상태 코드 포함 그대로 전달 | Reservation 응답 그대로 전달 |
 | Gateway | `POST /reservations/{seat_id}/cancel` | `{user_id}` | Reservation 응답을 상태 코드 포함 그대로 전달 | Reservation 응답 그대로 전달 |
 | Gateway | `GET /health` | - | `{"status":"ok"}` | - |
-| Reservation | `POST /reservations` | `{seat_id, user_id}` | `{"status":"booked", seat_id, user_id}` (200) | Inventory/Payment 실패 시 409, confirm 실패 시 502 |
+| Reservation | `POST /reservations` | `{seat_id, user_id}` | `{"status":"booked", seat_id, user_id}` (200) | Inventory lock 실패 시 409(순수 충돌), Payment 실패 또는 confirm 실패 시 502(다운스트림 장애) |
 | Reservation | `POST /reservations/{seat_id}/cancel` | `{user_id}` | `{"status":"cancelled", seat_id, user_id}` (200) | 좌석이 BOOKED 상태가 아니면 409 |
 | Reservation | `GET /health` | - | `{"status":"ok"}` | - |
 | Inventory | `POST /seats/{seat_id}/lock` | `{locked_by}` | `{seat_id, status:"LOCKED"}` (200) | 이미 잠김/BOOKED이거나 존재하지 않는 좌석 → 409 |

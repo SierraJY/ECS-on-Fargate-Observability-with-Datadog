@@ -104,6 +104,14 @@ async def create_reservation(body: ReservationBody):
             },
         )
 
+        if not charge_ok:
+            # Payment(다운스트림 서비스) 장애 — 리소스 충돌이 아니라 업스트림 실패이므로 502.
+            # ddtrace가 5xx는 자동으로 span.error를 마킹하므로 수동 태깅 불필요.
+            raise HTTPException(
+                status_code=502,
+                detail=f"reservation failed: {', '.join(failed_parts)} failed",
+            )
+
         raise HTTPException(
             status_code=409,
             detail=f"reservation failed: {', '.join(failed_parts)} failed",

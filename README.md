@@ -13,6 +13,7 @@
 - ECS on Fargate 환경의 구조적 특성(awsvpc, ECS Service Connect)과 이로부터 파생되는 관측성 제약
 - `AWS FireLens(Fluent Bit)`, `Datadog Agent`,를 통한 인프라·네트워크·로그·APM 데이터 수집 방법
 - FastAPI 기반 MSA 데모 환경을 통한 검증
+- Phase 3: 프론트엔드(RUM), DB 쿼리 레벨(DBM)까지 관측 범위 확장 — Fargate 제약의 연장이 아니라 지금까지 백엔드에 한정됐던 관측 범위 자체를 넓히는 작업
 
 ### 1.3 키워드
 
@@ -44,6 +45,10 @@
     - Datadog Agent, FireLens를 통하여 해당 플랫폼에 관측 데이터 전송
 - dd-trace
     - 애플리케이션 코드에 연동해 분산 트레이스를 수집하는 Datadog APM 기능의 SDK
+- RUM (Real User Monitoring)
+    - 브라우저에서 발생하는 세션/에러/Core Web Vitals 등 사용자 체감 데이터를 수집하는 Datadog 기능
+- DBM (Database Monitoring)
+    - 쿼리 실행 통계·커넥션·락 등 DB 내부를 쿼리 레벨까지 들여다보는 Datadog 기능
 
 ---
 
@@ -204,9 +209,23 @@
 - **구현 방법**
     - FastAPI 애플리케이션에 dd-trace 라이브러리 연동, 함수 실행 흐름 및 API 요청/응답 트레이스 수집
 
-### 4.5 대시보드 및 알림 설계
+### 4.5 프론트엔드 관측 (RUM, Phase 3에서 구현)
 
-- 4.1~4.4에서 수집한 인프라/네트워크/로그/APM 데이터를 통합해 보여주는 Datadog 대시보드 구성
+- 3장의 Fargate 제약과는 무관한 별도 축 — 4.1~4.4는 전부 ECS 태스크 내부(백엔드) 관측이었고, 사용자가 실제로 겪는 브라우저 단(로딩 시간, 클릭, JS 에러)은 관측 공백으로 남아 있었다는 점에서 출발한 범위 확장이다
+- **배치**: 6번째 ECS 서비스(`frontend`, 정적 nginx)를 신설해 기존 서비스들과 같은 ALB 오리진으로 호스팅 — S3+CloudFront 구성이었다면 필요했을 CORS 설정이 이 구조에서는 불필요해진다
+- **SDK 연동**: Datadog Browser RUM SDK를 CDN Sync 방식(`<head>`에서 스크립트 동기 로드 후 즉시 init)으로 연동 — 이 프로젝트가 빌드 파이프라인 없는 정적 파일 구조(`nginx:alpine`에 HTML/JS 복사만)이기 때문에, npm 패키지로 번들링하는 방식보다 기존 구조와 일관되고 Datadog이 공식적으로 권장하는 "앱 코드 실행 전에 최대한 먼저 로드" 원칙에도 부합한다
+- **APM 연결**: `allowedTracingUrls`에 API 요청이 실제로 나가는 도메인(로컬은 별도 포트, ECS는 같은 오리진)을 등록해 dd-trace(4.4의 백엔드 APM)와 RUM 트레이스를 연결 — Browser → Gateway 체인이 하나의 트레이스로 시연됨
+
+### 4.6 DB 레벨 관측 (DBM, Phase 3에서 구현)
+
+- 이 역시 3장의 Fargate 제약과는 무관한 범위 확장 — 4.4(APM)가 서비스 간 호출 흐름은 보여주지만, 그 안에서 실행되는 개별 SQL 쿼리의 성능(실행 횟수, 평균 시간, 락 대기 등)은 여전히 블랙박스였다는 공백에서 출발한다
+- **배치**: 새 Agent를 추가하지 않고 Inventory에 이미 떠 있는 Datadog Agent 사이드카(4.1)를 그대로 재사용 — postgres 통합 설정만 추가
+- **RDS는 컨테이너가 아니다**: 일반적인 Docker Autodiscovery는 "감시 대상 컨테이너에 라벨을 붙이면 Agent가 그 컨테이너를 찾아서 체크를 적용"하는 구조인데, RDS는 같은 Task 안에 떠 있는 컨테이너가 아니라 완전히 외부의 관리형 서비스라 라벨을 붙일 대상 자체가 없다 → **Agent 컨테이너 자기 자신에게 라벨을 붙이는 방식**으로 이 공백을 우회한다(Datadog 공식 RDS DBM 설정 가이드가 제시하는 패턴)
+- **알려진 한계**: dd-trace가 SQL에 상관관계 주석을 주입해 APM 트레이스에서 DBM 쿼리 상세로 바로 연결하는 기능은, Python 기준 `psycopg2`만 지원하고 이 프로젝트가 쓰는 `asyncpg`는 지원하지 않는다(dd-trace-py 라이브러리 자체의 한계) — DBM 데이터 수집 자체는 이 제약과 무관하게 정상 동작한다
+
+### 4.7 대시보드 및 알림 설계
+
+- 4.1~4.6에서 수집한 인프라/네트워크/로그/APM/RUM/DBM 데이터를 통합해 보여주는 Datadog 대시보드 구성
 - 이상 상황 감지를 위한 Monitor(알림) 임계치 설계(예: 에러율 급증, 레이턴시 임계치 초과)
 
 ---

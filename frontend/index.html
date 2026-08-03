@@ -5,6 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>좌석 예약</title>
   <link rel="stylesheet" href="style.css" />
+
+  <script src="config.js"></script>
+  <script
+    src="https://www.datadoghq-browser-agent.com/us1/v7/datadog-rum.js"
+    type="text/javascript"
+    crossorigin>
+  </script>
+  <script>
+    window.DD_RUM && window.DD_RUM.init({
+      applicationId: '7b8149c8-4feb-4f2f-8b32-6ab75552f971',
+      clientToken: 'pub8d8660a6e3fb62cedd76fcc25f411f7a',
+      site: 'datadoghq.com',
+      service: 'frontend',
+      env: 'dev',
+      version: '0.0.1',
+      sessionSampleRate: 100,
+      sessionReplaySampleRate: 20,
+      trackResources: true,
+      trackUserInteractions: true,
+      trackLongTasks: true,
+      allowedTracingUrls: [window.APP_CONFIG.apiBase || window.location.origin],
+      defaultPrivacyLevel: 'mask-user-input',
+    });
+  </script>
 </head>
 <body>
   <header class="topbar">
@@ -30,7 +54,6 @@
     <div id="seat-grid" class="seat-grid"></div>
   </main>
 
-  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

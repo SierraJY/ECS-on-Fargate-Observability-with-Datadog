@@ -98,6 +98,7 @@ async def create_reservation(body: ReservationBody):
             await client.post(f"{INVENTORY_URL}/seats/{body.seat_id}/release")
 
         _set_span_tags(
+            error=not charge_ok,
             **{
                 "failure.stage": ",".join(stages),
                 "failure.reason": ",".join(f"{part}_failed" for part in failed_parts),

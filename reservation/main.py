@@ -98,7 +98,6 @@ async def create_reservation(body: ReservationBody):
             await client.post(f"{INVENTORY_URL}/seats/{body.seat_id}/release")
 
         _set_span_tags(
-            error=True,
             **{
                 "failure.stage": ",".join(stages),
                 "failure.reason": ",".join(f"{part}_failed" for part in failed_parts),
@@ -119,7 +118,6 @@ async def cancel_reservation(seat_id: str, body: CancelBody):
         cancel_resp = await client.post(f"{INVENTORY_URL}/seats/{seat_id}/cancel")
         if cancel_resp.status_code != 200:
             _set_span_tags(
-                error=True,
                 **{"failure.stage": "cancel", "failure.reason": "not_booked"},
             )
             raise HTTPException(

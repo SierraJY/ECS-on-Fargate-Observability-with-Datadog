@@ -63,7 +63,7 @@
           "dd_tags": "env:dev"
         },
         "secretOptions": [
-          { "name": "apikey", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/datadog-api-key" }
+          { "name": "apikey", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:263232886346:secret:jy-project/datadog-api-key-E1adIK" }
         ]
       }
     },
@@ -78,9 +78,15 @@
         { "name": "DD_APM_ENABLED", "value": "true" }
       ],
       "secrets": [
-        { "name": "DD_API_KEY", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/datadog-api-key" },
-        { "name": "DD_SITE", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/dd-site" }
-      ]
+        { "name": "DD_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:263232886346:secret:jy-project/datadog-api-key-E1adIK" },
+        { "name": "DD_SITE", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/dd-site" },
+        { "name": "DD_POSTGRES_HOST", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/inventory-db-host" },
+        { "name": "DD_POSTGRES_USER", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:263232886346:secret:jy-project/inventory-dbm-datadog-NcgO3D:username::" },
+        { "name": "DD_POSTGRES_PASSWORD", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:263232886346:secret:jy-project/inventory-dbm-datadog-NcgO3D:password::" }
+      ],
+      "dockerLabels": {
+        "com.datadoghq.ad.checks": "{\"postgres\": {\"init_config\": {}, \"instances\": [{\"dbm\": true, \"host\": \"%%env_DD_POSTGRES_HOST%%\", \"port\": 5432, \"dbname\": \"inventory\", \"username\": \"%%env_DD_POSTGRES_USER%%\", \"password\": \"%%env_DD_POSTGRES_PASSWORD%%\", \"sslmode\": \"require\", \"aws\": {\"instance_endpoint\": \"%%env_DD_POSTGRES_HOST%%\", \"region\": \"ap-northeast-2\"}, \"tags\": [\"dbinstanceidentifier:jy-project-db\"]}]}}"
+      }
     },
     {
       "name": "log-router",

@@ -26,7 +26,9 @@ done
 
 RESPONSE=$(curl -s "$HOST/seats")
 
-BOOKED=$(echo "$RESPONSE" | grep -o '"seat_id":"[A-Z0-9]*","status":"BOOKED"' | sed -E 's/"seat_id":"([A-Z0-9]+)".*/\1/')
+# BOOKED 좌석의 seat_id:locked_by(예약한 user_id) 쌍 — 예약한 본인이 취소하는 것처럼 맞추기 위함
+BOOKED=$(echo "$RESPONSE" | grep -oP '"seat_id":"[A-Z0-9]+","status":"BOOKED","locked_by":"[^"]+"' \
+  | sed -E 's/"seat_id":"([A-Z0-9]+)","status":"BOOKED","locked_by":"([^"]+)"/\1:\2/')
 LOCKED=$(echo "$RESPONSE" | grep -o '"seat_id":"[A-Z0-9]*","status":"LOCKED"' | sed -E 's/"seat_id":"([A-Z0-9]+)".*/\1/')
 
 if [[ -z "$BOOKED" ]]; then
@@ -34,10 +36,12 @@ if [[ -z "$BOOKED" ]]; then
 else
   reset_count=0
   fail_count=0
-  for seat in $BOOKED; do
+  for entry in $BOOKED; do
+    seat="${entry%%:*}"
+    owner="${entry#*:}"
     code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$HOST/reservations/$seat/cancel" \
       -H "Content-Type: application/json" \
-      -d '{"user_id":"reset-script"}')
+      -d "{\"user_id\":\"$owner\"}")
     if [[ "$code" == "200" ]]; then
       reset_count=$((reset_count + 1))
     else

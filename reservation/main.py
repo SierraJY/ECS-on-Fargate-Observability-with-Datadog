@@ -98,12 +98,19 @@ async def create_reservation(body: ReservationBody):
             await client.post(f"{INVENTORY_URL}/seats/{body.seat_id}/release")
 
         _set_span_tags(
-            error=not charge_ok,
             **{
                 "failure.stage": ",".join(stages),
                 "failure.reason": ",".join(f"{part}_failed" for part in failed_parts),
             },
         )
+
+        if not charge_ok:
+            # Payment(다운스트림 서비스) 장애 — 리소스 충돌이 아니라 업스트림 실패이므로 502.
+            # ddtrace가 5xx는 자동으로 span.error를 마킹하므로 수동 태깅 불필요.
+            raise HTTPException(
+                status_code=502,
+                detail=f"reservation failed: {', '.join(failed_parts)} failed",
+            )
 
         raise HTTPException(
             status_code=409,

@@ -86,60 +86,117 @@ body {
 .dot.mine { background: var(--mine); }
 
 .status-message {
-  min-height: 20px;
-  padding: 0 24px;
-  font-size: 14px;
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  background: #fff;
+  border: 2px solid #d93025;
+  border-radius: 12px;
+  padding: 28px 48px 28px 32px;
+  min-width: 280px;
+  font-size: 20px;
+  font-weight: 700;
   color: #d93025;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  max-width: 420px;
+  text-align: center;
 }
 
-.cabin {
-  width: 320px;
-  margin: 24px auto 48px;
+.status-message.visible {
+  display: block;
+}
+
+.status-message.success {
+  border-color: #1a73e8;
+  color: #1a73e8;
+}
+
+.status-close {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.theater-wrap {
+  overflow-x: auto;
+  padding: 24px 12px 48px;
+}
+
+.theater {
+  width: fit-content;
+  margin: 0 auto;
   background: var(--card);
-  clip-path: polygon(
-    50% 0%, 85% 9%, 100% 20%,
-    100% 82%, 65% 100%, 35% 100%, 0% 82%,
-    0% 20%, 15% 9%
-  );
-  padding: 110px 20px 110px;
+  border-radius: 16px;
+  padding: 32px 32px 40px;
   box-sizing: border-box;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
 }
 
-.cockpit {
-  width: 60px;
-  height: 6px;
-  background: #dadce0;
-  border-radius: 3px;
+.screen {
+  width: 55%;
   margin: 0 auto 40px;
+  padding: 10px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: #5f6368;
+  background: #dadce0;
+  border-radius: 4px 4px 60px 60px / 4px 4px 24px 24px;
 }
 
 .seat-grid {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  gap: 6px;
 }
 
-.seat-row {
-  display: grid;
-  grid-template-columns: 56px 56px 24px 56px 56px;
+.theater-row {
+  display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
+  gap: 10px;
+}
+
+.row-label {
+  width: 18px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #5f6368;
+}
+
+.seat-section {
+  display: flex;
+  gap: 4px;
 }
 
 .aisle {
-  width: 100%;
+  width: 20px;
+  flex-shrink: 0;
 }
 
 .seat {
-  width: 56px;
-  height: 56px;
-  border-radius: 10px 10px 4px 4px;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 5px 5px 2px 2px;
   border: none;
   color: #fff;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 8px;
   cursor: pointer;
   transition: transform 0.1s ease;
 }

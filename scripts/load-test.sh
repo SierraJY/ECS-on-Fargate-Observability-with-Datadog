@@ -16,8 +16,6 @@ set -uo pipefail
 HOST="http://jy-project-alb-972275247.ap-northeast-2.elb.amazonaws.com"
 RPS=5
 DURATION=0
-SEATS=()
-for i in $(seq 1 20); do SEATS+=("A$i"); done
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,6 +29,14 @@ while [[ $# -gt 0 ]]; do
     *) echo "알 수 없는 옵션: $1" >&2; exit 1 ;;
   esac
 done
+
+# 좌석 목록은 하드코딩하지 않고 실행 시점에 /seats에서 그대로 가져온다 —
+# Inventory의 좌석 구성(행/번호 스킴)이 바뀌어도 이 스크립트를 안 고쳐도 되게 하기 위함
+mapfile -t SEATS < <(curl -s "$HOST/seats" | grep -oP '"seat_id":"[A-Za-z0-9]+"' | sed -E 's/"seat_id":"([A-Za-z0-9]+)"/\1/')
+if [[ ${#SEATS[@]} -eq 0 ]]; then
+  echo "좌석 목록을 가져오지 못했습니다: $HOST/seats" >&2
+  exit 1
+fi
 
 LOG_FILE="$(mktemp /tmp/jy-project-load-test.XXXXXX.log)"
 BOOKED_CACHE="$(mktemp /tmp/jy-project-load-test-booked.XXXXXX.txt)"

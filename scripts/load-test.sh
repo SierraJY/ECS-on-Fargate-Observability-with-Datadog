@@ -53,10 +53,11 @@ cleanup() {
 trap cleanup INT TERM
 
 refresh_booked_cache() {
-  # python 없이 grep/sed만으로 응답 JSON에서 BOOKED 좌석의 seat_id만 추출
+  # BOOKED 좌석의 seat_id와 locked_by(예약한 user_id)를 "seat:owner" 형태로 저장 —
+  # 취소할 때 예약한 본인이 취소하는 것처럼 user_id를 맞추기 위함
   curl -s "$HOST/seats" 2>/dev/null \
-    | grep -o '"seat_id":"[A-Z0-9]*","status":"BOOKED"' \
-    | sed -E 's/"seat_id":"([A-Z0-9]+)".*/\1/' \
+    | grep -oP '"seat_id":"[A-Z0-9]+","status":"BOOKED","locked_by":"[^"]+"' \
+    | sed -E 's/"seat_id":"([A-Z0-9]+)","status":"BOOKED","locked_by":"([^"]+)"/\1:\2/' \
     > "$BOOKED_CACHE" || true
 }
 
@@ -76,18 +77,21 @@ fire_request() {
       ;;
     reserve)
       local seat="${SEATS[$((RANDOM % ${#SEATS[@]}))]}"
+      local user="load_test_user_$RANDOM"
       code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$HOST/reservations" \
         -H "Content-Type: application/json" \
-        -d "{\"seat_id\":\"$seat\",\"user_id\":\"load-test\"}")
+        -d "{\"seat_id\":\"$seat\",\"user_id\":\"$user\"}")
       echo "POST /reservations $code" >> "$LOG_FILE"
       ;;
     cancel)
       mapfile -t booked < "$BOOKED_CACHE" 2>/dev/null || booked=()
-      local seat
-      seat=$(pick_random "${booked[@]}") || return 0
+      local entry seat owner
+      entry=$(pick_random "${booked[@]}") || return 0
+      seat="${entry%%:*}"
+      owner="${entry#*:}"
       code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$HOST/reservations/$seat/cancel" \
         -H "Content-Type: application/json" \
-        -d "{\"user_id\":\"load-test\"}")
+        -d "{\"user_id\":\"$owner\"}")
       echo "POST /reservations/{seat}/cancel $code" >> "$LOG_FILE"
       ;;
   esac

@@ -40,11 +40,11 @@
 - **Frontend** (Phase 3 추가)
     - 역할: 좌석 예약 UI(정적 HTML/JS, nginx). 좌석 그리드 조회/예약/취소, 브라우저에서 Gateway를 직접 호출
     - Gateway/Reservation에 `GET /seats` 패스스루 추가하여 좌석 목록 노출(기존엔 Inventory 내부용으로만 존재)
-    - Service Connect 미사용(서버사이드에서 다른 서비스 호출 없음), dd-trace 미적용(계측할 서버사이드 코드 없음, 대신 브라우저 관측은 RUM 예정)
+    - Service Connect 미사용(서버사이드에서 다른 서비스 호출 없음), dd-trace 미적용(계측할 서버사이드 코드 없음, 대신 브라우저 관측은 RUM으로 완료 — 5.5 참고)
 
 #### 2.3 공통 사항
 
-- Fast API로 구축예정
+- FastAPI로 구축
 - `portMappings`에 `appProtocol: HTTP` 지정 (Service Connect L7 메트릭 활성화 조건)
 - Gateway/Reservation/Inventory/Payment/Notification 5개 서비스는 Datadog Agent 사이드카 + FireLens 사이드카 + dd-trace 계측 동일 적용
 - Frontend는 Datadog Agent + FireLens는 동일 적용하되 dd-trace는 제외(2.2 참고)
@@ -74,8 +74,10 @@
 
 | 서비스 | Method / Path | Request Body | 성공 응답 | 실패 조건 |
 |---|---|---|---|---|
+| Gateway | `GET /seats` | - | Reservation 응답을 그대로 전달(Phase 3, Frontend용 패스스루) | Reservation 응답 그대로 전달 |
 | Gateway | `POST /reservations` | `{seat_id, user_id}` | Reservation 응답을 상태 코드 포함 그대로 전달 | Reservation 응답 그대로 전달 |
 | Gateway | `POST /reservations/{seat_id}/cancel` | `{user_id}` | Reservation 응답을 상태 코드 포함 그대로 전달 | Reservation 응답 그대로 전달 |
+| Gateway | `POST /admin/chaos` | `{mode, delay_ms, error_rate}` | Payment 응답을 그대로 전달(Phase 4, Payment가 ALB 미연결이라 프록시 필요) | Payment 응답 그대로 전달 |
 | Gateway | `GET /health` | - | `{"status":"ok"}` | - |
 | Reservation | `POST /reservations` | `{seat_id, user_id}` | `{"status":"booked", seat_id, user_id}` (200) | Inventory lock 실패 시 409(순수 충돌), Payment 실패 또는 confirm 실패 시 502(다운스트림 장애) |
 | Reservation | `POST /reservations/{seat_id}/cancel` | `{user_id}` | `{"status":"cancelled", seat_id, user_id}` (200) | 좌석이 BOOKED 상태가 아니면 409 |
@@ -86,7 +88,8 @@
 | Inventory | `POST /seats/{seat_id}/cancel` | - | `{seat_id, status:"AVAILABLE"}` (200) | BOOKED 상태가 아니면 409 |
 | Inventory | `GET /seats` | - | 전체 좌석 배열 `[{seat_id, status, locked_by, locked_at}, ...]` | - |
 | Inventory | `GET /health` | - | `{"status":"ok"}` (DB 연결 확인 포함, 실패 시 503) | - |
-| Payment | `POST /charge` | `{user_id, amount}` | `{"status":"charged", user_id, amount}` (200, mock — 항상 성공. 장애 주입은 Phase 2에서 `/admin/chaos` 추가 예정) | - |
+| Payment | `POST /charge` | `{user_id, amount}` | `{"status":"charged", user_id, amount}` (200, mock — 기본은 항상 성공) | Phase 4에서 `/admin/chaos`로 장애 주입 시 500(error 모드) |
+| Payment | `POST /admin/chaos` | `{mode, delay_ms, error_rate}` | 현재 chaos 설정 그대로 반환(200) | - (인증 없음, 데모 전용 — 7.4 참고) |
 | Payment | `GET /health` | - | `{"status":"ok"}` | - |
 | Notification | `POST /notify` | `{user_id, message}` | `{"status":"sent", user_id}` (200, 로그만 남기고 실제 발송 없음) | - |
 | Notification | `GET /health` | - | `{"status":"ok"}` | - |
@@ -365,6 +368,10 @@
 ```
 /gateway, /reservation, /inventory, /payment, /notification
   각 디렉터리: Dockerfile, main.py, requirements.txt
+/frontend (Phase 3)
+  Dockerfile, index.html, app.js, style.css, config.js
+/scripts (Phase 4)
+  load-test.sh, reset-seats.sh, chaos.sh
 /.github/workflows/build-and-deploy.yml
 ```
 
@@ -530,29 +537,30 @@
 
 ---
 
-## 7. 장애 주입 메커니즘
+## 7. 장애 주입 메커니즘 (Phase 4에서 구현 완료)
 
 - 라이브 데모 특성상 랜덤 장애가 아니라 즉시 토글 가능한 방식 채택. Task 재배포 방식(30초~1분 소요)은 발표 흐름을 끊으므로 배제.
 
 #### 7.1 Payment — 주 장애 주입 지점
 
 - `POST /admin/chaos` 엔드포인트 (in-memory 플래그, 재기동 불필요)
+- **구현 완료**: Payment는 ALB에 안 붙어있어 외부에서 직접 호출 불가 — Gateway가 `POST /admin/chaos`를 그대로 프록시해서 노출(`PAYMENT_URL` env var로 Service Connect 경유 호출). 토글은 `scripts/chaos.sh <latency|error|off> [--delay-ms N] [--error-rate R]`로 실행(`off`가 곧 장애 해제)
 
 ```json
 { "mode": "latency" | "error" | "off", "delay_ms": 5000, "error_rate": 1.0 }
 ```
 
 - `latency`: `/charge` 응답에 지정 지연 강제 추가 → Reservation 병렬 호출 중 하나가 느려지며 전체 예약 응답 지연/타임아웃
-- `error`: 지정 비율로 500 강제 반환 → Reservation의 보상 트랜잭션(Inventory `/release`) 흐름까지 시연 가능
+- `error`: 지정 비율로 500 강제 반환 → Reservation은 이를 409가 아닌 **502**로 변환 반환(순수 좌석 충돌과 다운스트림 장애 구분, 2.4 참고), 보상 트랜잭션(Inventory `/release`) 흐름까지 시연 가능. ddtrace가 5xx 자동 error 마킹 + Datadog Log Pipeline(`jy-project-409-as-error`)이 `http.status_code:>=500`을 error로 재분류해 APM/로그 양쪽에서 실제 운영 환경 검증 완료
 - `off`: 정상 복귀
 
 #### 7.2 Inventory — 보조 시나리오
 
-기존 좌석 잠금 로직(409 Conflict)을 그대로 활용. 동일 좌석에 동시 예약 요청 2개를 보내면 자연 재현. 인프라 장애가 아닌 비즈니스 로직 충돌 시연용.
+기존 좌석 잠금 로직(409 Conflict)을 그대로 활용. 동일 좌석에 동시 예약 요청 2개를 보내면 자연 재현. 인프라 장애가 아닌 비즈니스 로직 충돌 시연용 — Log Pipeline에서 `status:warning`으로 분류되어 진짜 장애(error)와 구분됨.
 
-#### 7.3 배경 트래픽 생성
+#### 7.3 배경 트래픽 생성 — 구현 완료
 
-장애 주입 전 정상 베이스라인이 그래프에 깔려 있어야 이상치가 드러남. 부하 생성 스크립트(반복 `POST /reservations` 호출, 또는 `hey`/`k6`)로 데모 시작 몇 분 전부터 초당 일정 트래픽 유지.
+`scripts/load-test.sh --rps N --duration N`으로 `GET /seats`/`POST /reservations`/취소를 섞은 트래픽을 반복 생성(순수 bash+curl, 별도 도구 불필요). 좌석 목록은 하드코딩 대신 실행 시점에 `/seats`에서 그대로 가져와서 좌석 구성이 바뀌어도 안전. `scripts/reset-seats.sh`로 테스트 후 좌석을 일괄 초기화 가능.
 
 #### 7.4 주의사항
 

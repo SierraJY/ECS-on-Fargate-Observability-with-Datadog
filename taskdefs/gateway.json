@@ -47,7 +47,7 @@
           "dd_tags": "env:dev"
         },
         "secretOptions": [
-          { "name": "apikey", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/datadog-api-key" }
+          { "name": "apikey", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:263232886346:secret:jy-project/datadog-api-key-E1adIK" }
         ]
       }
     },
@@ -62,7 +62,7 @@
         { "name": "DD_APM_ENABLED", "value": "true" }
       ],
       "secrets": [
-        { "name": "DD_API_KEY", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/datadog-api-key" },
+        { "name": "DD_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:263232886346:secret:jy-project/datadog-api-key-E1adIK" },
         { "name": "DD_SITE", "valueFrom": "arn:aws:ssm:ap-northeast-2:263232886346:parameter/jy-project/dd-site" }
       ]
     },

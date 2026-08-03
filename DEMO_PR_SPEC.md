@@ -1,7 +1,7 @@
 ### 1 개요
 
 - Goal
-    - 좌석 예약 도메인의 MSA를 ECS Fargate + Service Connect로 구축하고, Datadog으로 인프라·로그·APM·네트워크(VPC Flow Logs, Service Connect 메트릭)를 통합 관측, Frontend+RUM/DBM은 Phase 3에서 추가 진행 중
+    - 좌석 예약 도메인의 MSA를 ECS Fargate + Service Connect로 구축하고, Datadog으로 인프라·로그·APM·네트워크(VPC Flow Logs, Service Connect 메트릭)·프론트엔드(RUM)·DB(DBM)까지 통합 관측(Phase 3에서 Frontend+RUM/DBM 추가 완료)
 
 ---
 
@@ -24,6 +24,7 @@
 - **Inventory**
     - 역할: 좌석 재고 상태 관리, 동시 예약 충돌 방지, 유일하게 RDS 사용
     - DB: RDS PostgreSQL, `seats` 테이블 — `seat_id`, `status`(AVAILABLE/LOCKED/BOOKED), `locked_by`, `locked_at`
+    - DBM(Phase 3 추가): Datadog Agent 사이드카에 postgres 통합 설정 추가, RDS를 쿼리 성능·커넥션·락 레벨까지 관측(5.6 참고)
     - 엔드포인트:
         - `POST /seats/{seat_id}/lock` — AVAILABLE일 때만 LOCKED 전환(낙관적 락), 이미 잠긴 경우 409
         - `POST /seats/{seat_id}/confirm` — LOCKED → BOOKED
@@ -333,8 +334,21 @@
 | `/jy-project/ecs-task-role-arn` | String | `arn:aws:iam::263232886346:role/ecs-demo-task-role` | taskdef 최상위 `taskRoleArn`, CI가 등록 전 치환 |
 | `/jy-project/rds-secret-arn` | String | `arn:aws:secretsmanager:ap-northeast-2:263232886346:secret:rds!db-18dce600-05b3-4a42-9284-3eeb5b617745-NHTBAD` | inventory taskdef의 RDS `secrets.valueFrom` 접두사, CI가 등록 전 치환. 값 자체는 3.3의 RDS 관리형 Secrets Manager 시크릿 ARN을 그대로 가리키는 포인터 |
 | `/jy-project/dd-site` | String | `datadoghq.com` | Datadog Agent 컨테이너는 `secrets.valueFrom`으로 런타임에 직접 조회, FireLens `Host` 옵션 문자열은 CI가 치환 |
-| `/jy-project/datadog-api-key` | SecureString(KMS `alias/aws/ssm`, key ARN `arn:aws:kms:ap-northeast-2:263232886346:key/cc5ac505-a5e1-49ba-b1c3-1093adc44a74`) | Datadog API Key 원문 | Datadog Agent/FireLens 컨테이너가 `secrets`/`secretOptions`의 `valueFrom`으로 런타임에 직접 조회. CI(4.4의 OIDC 역할)는 `kms:Decrypt` 권한이 없어 이 값을 복호화할 수 없음 — 원문 API Key가 CI 파이프라인을 거치지 않는 구조 |
-| `/jy-project/inventory-db-host` | String | `jy-project-db.cxsmy4yg60ts.ap-northeast-2.rds.amazonaws.com` | inventory 컨테이너가 `secrets.valueFrom`으로 런타임에 직접 조회(RDS가 private 서브넷·퍼블릭 액세스 차단이라 보안상 필수는 아니지만, RDS 재생성 시 taskdef 직접 수정을 피하려고 중앙화). CI 치환 불필요 — SSM 파라미터 ARN이 계정ID+리전+이름으로 결정되는 값이라 taskdef에 고정 문자열로 기입 |
+| `/jy-project/inventory-db-host` | String | `jy-project-db.cxsmy4yg60ts.ap-northeast-2.rds.amazonaws.com` | inventory 컨테이너와 datadog-agent(DBM, Phase 3)가 `secrets.valueFrom`으로 런타임에 직접 조회(RDS가 private 서브넷·퍼블릭 액세스 차단이라 보안상 필수는 아니지만, RDS 재생성 시 taskdef 직접 수정을 피하려고 중앙화). CI 치환 불필요 — SSM 파라미터 ARN이 계정ID+리전+이름으로 결정되는 값이라 taskdef에 고정 문자열로 기입 |
+
+- **`/jy-project/datadog-api-key`(SecureString)는 Phase 3에서 삭제됨** — 아래 3.7-1 참고, Secrets Manager로 이전
+
+#### 3.7-1 Secrets Manager (Phase 3 추가)
+
+- 계기: VPC Flow Logs/Service Connect Firehose destination 설정 화면(콘솔)이 API 키 값을 "Secrets Manager에서 직접 조회" 옵션만 지원하고 SSM Parameter Store는 지원하지 않음 — 매번 콘솔에서 API 키를 수동 복붙해야 하는 번거로움 때문에 이전 결정
+- RDS 마스터 계정(3.3)처럼 자동 로테이션이 필요해서가 아니라, 순수하게 콘솔 연동 편의 때문에 채택한 예외적인 케이스(5.1에서 SSM을 기본값으로 삼은 이유와 대비)
+
+| Secret name | 저장 형식 | 값 | 용도 |
+|---|---|---|---|
+| `jy-project/datadog-api-key` | Plaintext (단일 문자열) | Datadog API Key 원문 | 6개 서비스 taskdef의 `DD_API_KEY`(Agent)/`apikey`(FireLens) `secrets.valueFrom`이 참조. Firehose destination 콘솔 설정 시에도 재사용 |
+| `jy-project/inventory-dbm-datadog` | Key/value (`username`, `password`) | DBM 전용 읽기 전용 DB 유저(`pg_monitor` 부여) 자격증명 | Inventory datadog-agent 컨테이너의 `DD_POSTGRES_USER`/`DD_POSTGRES_PASSWORD` `secrets.valueFrom`이 `:username::`/`:password::` 접미사로 참조 |
+
+- IAM: 기존 `ecs-demo-execution-role`의 `secrets-read` 인라인 정책이 `secret:*` 와일드카드라 별도 권한 추가 불필요(3.6 참고)
 
 ---
 
@@ -449,7 +463,8 @@
 - 컨테이너명 `datadog-agent`, 이미지 `public.ecr.aws/datadog/agent:latest`(ECR Public, Docker Hub rate limit 회피 — 5.2의 FireLens 이미지 선택과 동일한 이유)
 - `cpu: 256`, `memory: 512`(6번 리소스 스펙), `essential: false`(Agent 장애가 앱까지 죽이지 않도록)
 - 환경변수: `ECS_FARGATE=true`, `DD_APM_ENABLED=true`(5.3 dd-trace 적용 이후)
-- `DD_API_KEY`/`DD_SITE`는 **Secrets Manager가 아니라 SSM Parameter Store**에서 `secrets.valueFrom`으로 Fargate 기동 시점에 직접 조회(3.7 참고) — RDS 자격증명과 달리 Datadog 쪽은 자동 로테이션이 필요 없어 무료 티어인 SSM으로 통일
+- `DD_SITE`는 SSM Parameter Store에서 `secrets.valueFrom`으로 Fargate 기동 시점에 직접 조회(3.7 참고) — RDS 자격증명과 달리 Datadog 쪽은 자동 로테이션이 필요 없어 무료 티어인 SSM이 기본값
+- `DD_API_KEY`는 **Phase 3에서 Secrets Manager로 이전**(정정: 초기엔 SSM으로 통일했으나, Firehose destination 콘솔 연동 편의 때문에 예외적으로 옮김 — 3.7-1 참고)
 
 #### 5.2 FireLens 사이드카 (로그)
 
@@ -476,12 +491,24 @@
 - **Service Connect 메트릭**: `AWS/ECS` 네임스페이스 CloudWatch 네이티브 메트릭 자동 수집 확인, Datadog 연동은 CloudWatch Metric Streams(Firehose, OpenTelemetry 1.0 포맷) 채택 — 이쪽은 상시 운영 유지
 - Envoy Access Logs(보조 경로)는 검토 후 스킵 — dd-trace + FireLens로 Trace-to-Log 체인이 이미 충분
 
-#### 5.5 Frontend + RUM (Phase 3, 진행 중)
+#### 5.5 Frontend + RUM (Phase 3, 완료)
 
 - Frontend 서비스(정적 페이지, nginx) 배포 완료 — ALB 경로 기반 라우팅(`/reservations*`, `/seats`, `/health` → Gateway, 나머지 default → Frontend)으로 실제 좌석 예약 UI 동작 확인
-- Datadog RUM(Browser) 연동은 **아직 미착수** — 다음 단계
+- **Datadog RUM(Browser) 연동 완료**: CDN Sync 방식(`datadoghq-browser-agent.com` 스크립트를 `index.html` head에서 동기 로드) 채택 — 이 프로젝트가 빌드 파이프라인 없는 정적 파일 구조(2.2 참고)라 npm 패키지 대신 CDN 방식이 일관됨
+    - `service: frontend`, `env: dev`, `version: 0.0.1`(백엔드 서비스들의 Unified Service Tagging 컨벤션과 통일, 5.3 참고)
+    - `allowedTracingUrls`는 `config.js`의 기존 `isLocal` 판별(`apiBase`) 값을 재사용 — 로컬(포트 분리)/ECS(같은 오리진) 환경 모두에서 ALB 도메인을 하드코딩하지 않고 실제 API 요청 URL과 자동 매칭되도록 구성
+    - dd-trace(Gateway APM)와 RUM 트레이스 연결까지 검증 완료 — Browser → Gateway 체인이 하나의 트레이스로 확인됨
 
-#### 5.6 대시보드 및 알림
+#### 5.6 DBM (Database Monitoring, Phase 3, 완료)
+
+- 사전 조건 확인: RDS PostgreSQL 18은 `shared_preload_libraries`에 `pg_stat_statements`가 시스템 기본값으로 이미 preload되어 있어 파라미터 그룹 변경/재부팅 불필요(당초 예상과 다름). Performance Insights도 미활성화 상태로 진행 — 채택 방식(Agent가 DB에 직접 SQL 접속)에서는 필수 요건이 아니었음
+- `inventory` DB에 `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;` 실행, 전용 읽기 전용 유저 `datadog` 생성 후 `pg_monitor` 역할 부여(3.7-1의 Secrets Manager 자격증명)
+- 수집 방식: Inventory에 이미 떠 있는 `datadog-agent` 사이드카 재사용(별도 Agent 불필요). RDS는 같은 태스크의 컨테이너가 아니라 외부 서비스라 Docker Autodiscovery 대상 컨테이너가 없음 — **Agent 컨테이너 자신에게 `dockerLabels.com.datadoghq.ad.checks` Autodiscovery 라벨을 붙이는 방식**으로 postgres 통합 설정(Datadog 공식 RDS DBM 가이드의 패턴), `%%env_VARNAME%%` 템플릿 변수로 시크릿을 라벨 문자열에 직접 노출하지 않음
+- `sslmode: require` 채택 — RDS 파라미터 `rds.force_ssl=1`은 암호화만 강제하고 CA 검증까지 강제하지 않아서, 앱(inventory)이 쓰는 `verify-full`과 달리 Agent 쪽엔 CA 번들을 넣지 않아도 됨
+- 검증: 예약 부하 트래픽 발생 후 Databases Explorer에서 실제 쿼리 통계(`UPDATE seats SET status = 'BOOKED' WHERE seat_id = $1 AND status = 'LOCKED' RETURNING seat_id, status` 등) 확인
+- **알려진 한계**: APM 트레이스 스팬에서 "Database Monitoring is not enabled" 표시 — dd-trace-py의 APM↔DBM 트레이스-쿼리 상관관계 기능은 Python 기준 `psycopg2`만 지원, Inventory가 쓰는 `asyncpg`는 미지원([DataDog/dd-trace-py#7966](https://github.com/DataDog/dd-trace-py/issues/7966)). DBM 자체(쿼리 통계)는 정상 동작하며, 드라이버 교체는 스코프 밖으로 판단해 스킵
+
+#### 5.7 대시보드 및 알림
 
 - 대시보드 위젯: 서비스별 CPU/메모리(5.1), 에러 로그 건수(5.2), 트레이스 에러율·레이턴시(5.3)
 - Monitor 예시: Payment 에러율 임계치 초과, Reservation 종단 레이턴시 임계치 초과 — 5.3 데모에서 장애를 최초로 감지하는 트리거

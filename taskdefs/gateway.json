@@ -19,6 +19,7 @@
       "environment": [
         { "name": "ECS_FARGATE", "value": "true" },
         { "name": "RESERVATION_URL", "value": "http://reservation.jy-project:8000" },
+        { "name": "PAYMENT_URL", "value": "http://payment.jy-project:8000" },
         { "name": "DD_SERVICE", "value": "gateway" },
         { "name": "DD_ENV", "value": "dev" },
         { "name": "DD_VERSION", "value": "0.0.1" },

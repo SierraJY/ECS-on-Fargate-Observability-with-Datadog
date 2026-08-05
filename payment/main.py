@@ -1,9 +1,18 @@
 import asyncio
+import logging
 import random
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] "
+    "[dd.service=%(dd.service)s dd.env=%(dd.env)s dd.version=%(dd.version)s "
+    "dd.trace_id=%(dd.trace_id)s dd.span_id=%(dd.span_id)s] - %(message)s",
+)
+logger = logging.getLogger("payment")
 
 app = FastAPI()
 
@@ -40,6 +49,10 @@ async def charge(body: ChargeBody):
         await asyncio.sleep(_chaos_state["delay_ms"] / 1000)
     elif _chaos_state["mode"] == "error":
         if random.random() < _chaos_state["error_rate"]:
+            logger.error(
+                "payment gateway error (chaos injected)",
+                extra={"user_id": body.user_id, "amount": body.amount},
+            )
             raise HTTPException(status_code=500, detail="payment gateway error (chaos injected)")
 
     return {"status": "charged", "user_id": body.user_id, "amount": body.amount}

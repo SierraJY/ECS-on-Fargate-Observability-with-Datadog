@@ -25,7 +25,8 @@
         { "name": "DD_ENV", "value": "dev" },
         { "name": "DD_VERSION", "value": "0.0.1" },
         { "name": "DD_AGENT_HOST", "value": "localhost" },
-        { "name": "DD_TRACE_AGENT_PORT", "value": "8126" }
+        { "name": "DD_TRACE_AGENT_PORT", "value": "8126" },
+        { "name": "DD_LOGS_INJECTION", "value": "true" }
       ],
       "secrets": [
         {

@@ -1,3 +1,4 @@
+import logging
 import os
 import ssl
 from contextlib import asynccontextmanager
@@ -5,6 +6,14 @@ from contextlib import asynccontextmanager
 import asyncpg
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] "
+    "[dd.service=%(dd.service)s dd.env=%(dd.env)s dd.version=%(dd.version)s "
+    "dd.trace_id=%(dd.trace_id)s dd.span_id=%(dd.span_id)s] - %(message)s",
+)
+logger = logging.getLogger("inventory")
 
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
@@ -76,7 +85,8 @@ async def health():
     try:
         async with app.state.pool.acquire() as conn:
             await conn.fetchval("SELECT 1")
-    except Exception:
+    except Exception as exc:
+        logger.error("database unavailable", exc_info=exc)
         raise HTTPException(status_code=503, detail="database unavailable")
     return {"status": "ok"}
 
@@ -103,6 +113,7 @@ async def lock_seat(seat_id: str, body: LockBody):
             seat_id,
         )
     if row is None:
+        logger.warning("lock failed: seat not available", extra={"seat_id": seat_id})
         raise HTTPException(status_code=409, detail=f"seat {seat_id} is not available")
     return dict(row)
 
@@ -119,6 +130,7 @@ async def confirm_seat(seat_id: str):
             seat_id,
         )
     if row is None:
+        logger.warning("confirm failed: seat not locked", extra={"seat_id": seat_id})
         raise HTTPException(status_code=409, detail=f"seat {seat_id} is not locked")
     return dict(row)
 
@@ -135,6 +147,7 @@ async def release_seat(seat_id: str):
             seat_id,
         )
     if row is None:
+        logger.warning("release failed: seat not locked", extra={"seat_id": seat_id})
         raise HTTPException(status_code=409, detail=f"seat {seat_id} is not locked")
     return dict(row)
 
@@ -151,5 +164,6 @@ async def cancel_seat(seat_id: str):
             seat_id,
         )
     if row is None:
+        logger.warning("cancel failed: seat not booked", extra={"seat_id": seat_id})
         raise HTTPException(status_code=409, detail=f"seat {seat_id} is not booked")
     return dict(row)

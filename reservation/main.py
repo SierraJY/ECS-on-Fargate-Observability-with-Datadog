@@ -1,10 +1,19 @@
 import asyncio
+import logging
 import os
 
 import httpx
 from ddtrace import tracer
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] "
+    "[dd.service=%(dd.service)s dd.env=%(dd.env)s dd.version=%(dd.version)s "
+    "dd.trace_id=%(dd.trace_id)s dd.span_id=%(dd.span_id)s] - %(message)s",
+)
+logger = logging.getLogger("reservation")
 
 INVENTORY_URL = os.getenv("INVENTORY_URL", "http://inventory:8000")
 PAYMENT_URL = os.getenv("PAYMENT_URL", "http://payment:8000")
@@ -74,6 +83,10 @@ async def create_reservation(body: ReservationBody):
                     error=True,
                     **{"failure.stage": "confirm", "failure.reason": "confirm_failed"},
                 )
+                logger.error(
+                    "failed to confirm seat after successful lock and charge",
+                    extra={"seat_id": body.seat_id, "user_id": body.user_id},
+                )
                 raise HTTPException(
                     status_code=502,
                     detail="failed to confirm seat after successful lock and charge",
@@ -103,6 +116,14 @@ async def create_reservation(body: ReservationBody):
                 "failure.reason": ",".join(f"{part}_failed" for part in failed_parts),
             },
         )
+        logger.warning(
+            "reservation failed",
+            extra={
+                "seat_id": body.seat_id,
+                "user_id": body.user_id,
+                "failed_parts": failed_parts,
+            },
+        )
 
         if not charge_ok:
             # Payment(다운스트림 서비스) 장애 — 리소스 충돌이 아니라 업스트림 실패이므로 502.
@@ -127,6 +148,10 @@ async def cancel_reservation(seat_id: str, body: CancelBody):
         if cancel_resp.status_code != 200:
             _set_span_tags(
                 **{"failure.stage": "cancel", "failure.reason": "not_booked"},
+            )
+            logger.warning(
+                "cancel failed: seat is not booked",
+                extra={"seat_id": seat_id, "user_id": body.user_id},
             )
             raise HTTPException(
                 status_code=409, detail=f"cancel failed: seat {seat_id} is not booked"

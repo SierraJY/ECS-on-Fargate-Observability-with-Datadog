@@ -22,15 +22,20 @@ services:
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
       DB_SSLMODE: disable
+      DD_LOGS_INJECTION: "true"
     depends_on:
       postgres:
         condition: service_healthy
 
   payment:
     build: ./payment
+    environment:
+      DD_LOGS_INJECTION: "true"
 
   notification:
     build: ./notification
+    environment:
+      DD_LOGS_INJECTION: "true"
 
   reservation:
     build: ./reservation
@@ -38,6 +43,7 @@ services:
       INVENTORY_URL: http://inventory:8000
       PAYMENT_URL: http://payment:8000
       NOTIFICATION_URL: http://notification:8000
+      DD_LOGS_INJECTION: "true"
     depends_on:
       - inventory
       - payment
@@ -47,6 +53,7 @@ services:
     build: ./gateway
     environment:
       RESERVATION_URL: http://reservation:8000
+      DD_LOGS_INJECTION: "true"
     ports:
       - "8000:8000"
     depends_on:

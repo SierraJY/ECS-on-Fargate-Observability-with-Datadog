@@ -1,5 +1,5 @@
 const API_BASE = window.APP_CONFIG.apiBase;
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 1000;
 
 const grid = document.getElementById("seat-grid");
 const userInput = document.getElementById("user-id");

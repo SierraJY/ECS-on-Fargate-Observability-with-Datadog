@@ -133,9 +133,11 @@ async def create_reservation(body: ReservationBody):
                 detail=f"reservation failed: {', '.join(failed_parts)} failed",
             )
 
+        # charge_ok가 True인데 여기 도달했다면 lock만 실패한 것 — 결제 시점보다 먼저
+        # 다른 사용자가 결제를 완료해 좌석이 이미 잠겼거나(BOOKED) 팔린 경우.
         raise HTTPException(
             status_code=409,
-            detail=f"reservation failed: {', '.join(failed_parts)} failed",
+            detail="이미 판매된 좌석입니다.",
         )
 
 
